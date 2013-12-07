@@ -4,6 +4,7 @@
 #include <util/delay.h>
 
 volatile static uint16_t ch1_counts = 0, ch2_counts = 0;
+volatile static uint8_t pwm_mirror = 1;
 ISR(PCINT0_vect) {
   static uint16_t ch1_start = 0, ch2_start = 0;
   static uint8_t ch1_state = 0, ch2_state = 0;
@@ -15,7 +16,10 @@ ISR(PCINT0_vect) {
     if (ch1_state) {
       ch1_start = tm;
     } else {
-      ch1_counts = tm - ch1_start;
+      ch1_counts = (tm - ch1_start);
+      if (pwm_mirror) {
+        OCR0A = ch1_counts>>8;
+      }
     }
   }
   if ((state&2) != ch2_state) {
@@ -23,7 +27,10 @@ ISR(PCINT0_vect) {
     if (ch2_state) {
       ch2_start = tm;
     } else {
-      ch2_counts = tm - ch1_start;
+      ch2_counts = (tm - ch1_start);
+      if (pwm_mirror) {
+        OCR0B = ch2_counts>>8;
+      }
     }
   }
 }
@@ -71,10 +78,6 @@ ISR(SPI_STC_vect) {
   }
 }
 
-static void tmr1_init() {
-  TCCR1B = 0x01;
-}
-
 static void spi_init() {
   // PB3 (MOSI), PB5 (SCK), PB2 (/SS) input
   // PB4 (MISO) output
@@ -83,10 +86,32 @@ static void spi_init() {
   SPCR = (1<<SPE) | (1<<SPIE);
 }
 
+static void pwmgen_init() {
+  // Generate PWM on PD6/PD5 (OC0A/OC0B respectively)
+  // ugh, this is only 8-bit PWM, though, and at ~300Hz.  i hope that
+  // works.
+  // set TMR0 prescaler to /256
+  DDRD |= (1<<5) | (1<<6);
+
+  // period in ms = 65536/F_CPU
+  // duration of N counts (milliseconds) = T = 256000*n/F_CPU
+  // n = T*F_CPU/256000
+  OCR0A = (1.5*F_CPU/256000);
+  OCR0B = (1.5*F_CPU/256000);
+  // (at 20MHz this gives a dynamic range of 78-156, 117 being center)
+  // so ~6.3 bit pwm...
+
+  TCCR0A = 0xA3; // enable OC0A, OC0B, fast PWM mode
+  TCCR0B = 0x04; // prescaler /256, 305.1Hz (3.2768ms cycle)
+}
+
 int main() {
-  tmr1_init();
+  // Set up TMR1 to count up on each clock cycle (20MHz)
+  TCCR1B = 0x01;
+
   spi_init();
   pwmcapture_init();
+  pwmgen_init();
 
   sei();
 
