@@ -155,10 +155,10 @@ int main() {
   sei();
 
   DDRC = 1<<5;
-  uint16_t itercount = 0;
+  uint32_t itercount = 0;
   for (;;) {
     itercount++;
-    if (!itercount)
+    if (!(itercount&0x7ffff))
       PORTC ^= 1<<5;
     if (ch1_counts) {
       if (pwm_mirror) {
