@@ -3,23 +3,44 @@
 #include <avr/pgmspace.h>
 #include <util/delay.h>
 
-volatile static uint16_t ch1_counts = 0, ch2_counts = 0;
+#define QUEUE_SIZE 32
+
+volatile static uint8_t ch1_queue[QUEUE_SIZE], ch2_queue[QUEUE_SIZE];
+volatile static uint8_t queue_head = 0, queue_tail = 0, queue_state = 0;
+// if queue_state is 0, ch1_queue[head] and ch2_queue[head] are both empty
+// if it's 1, then one of ch1_queue or ch2_queue is filled and the other is
+// awaiting the PWM pulse
+
+static void enqueue(volatile uint8_t *q, uint8_t item) {
+  q[queue_head] = item;
+  if (queue_state == 0) {
+    queue_state++;
+  } else {
+    queue_head = (queue_head+1)&(QUEUE_SIZE-1);
+    if (queue_head == queue_tail) {  // queue overflow
+      queue_tail = (queue_tail+1)&(QUEUE_SIZE-1);
+    }
+    queue_state = 0;
+  }
+}
+
+static uint8_t queuelen() {
+  return (queue_head - queue_tail)&(QUEUE_SIZE-1);
+}
+
+volatile static uint8_t ch1_counts = 0, ch2_counts = 0;
 volatile static uint8_t pwm_mirror = 1;
 ISR(PCINT0_vect) {
-  static uint16_t ch1_start = 0, ch2_start = 0;
+  static uint8_t ch1_start = 0, ch2_start = 0;
   static uint8_t ch1_state = 0, ch2_state = 0;
-  uint16_t tm = TCNT1L;
+  uint8_t tm = TCNT0;
   uint8_t state = PINB;
-  tm |= (uint16_t)TCNT1H << 8;
   if ((state&1) != ch1_state) {
     ch1_state = state&1;
     if (ch1_state) {
       ch1_start = tm;
     } else {
       ch1_counts = (tm - ch1_start);
-      if (pwm_mirror) {
-        OCR0A = ch1_counts>>8;
-      }
     }
   }
   if ((state&2) != ch2_state) {
@@ -28,9 +49,6 @@ ISR(PCINT0_vect) {
       ch2_start = tm;
     } else {
       ch2_counts = (tm - ch1_start);
-      if (pwm_mirror) {
-        OCR0B = ch2_counts>>8;
-      }
     }
   }
 }
@@ -43,18 +61,26 @@ static void pwmcapture_init() {
 }
 
 ISR(SPI_STC_vect) {
-  char spi_in = SPDR;
-  static uint8_t spi_state = 0;
-  static uint8_t spi_hibyte;
+  uint8_t spi_in = SPDR;
+  static uint8_t spi_state = 0, spi_hibyte = 0;
+  static uint8_t spi_readlen = 0;
   switch (spi_state) {
     default:  // command mode, state 0 (or invalid states)
       if (spi_in == 0x01) {  // command 0x01: read timer
         SPDR = TCNT1L;
         spi_hibyte = TCNT1H;
         spi_state = 1;
-      } else if(spi_in == 0x02) {  // command 0x02: read channels
-        SPDR = ch1_counts&255;
-        spi_state = 2;
+      } else if (spi_in == 0x02) {  // command 0x02: read PWM input queue
+        spi_readlen = queuelen();
+        SPDR = spi_readlen;
+        if (spi_readlen)
+          spi_state = 2;
+      } else if (spi_in == 0x03) {  // command 0x03: set pwm mirroring
+        SPDR = 1 + (pwm_mirror << 1);
+        spi_state = 5;
+      } else if (spi_in == 0x04) {  // command 0x04: set pwm output
+        SPDR = 1;
+        spi_state = 6;
       } else {
         SPDR = 0;
       }
@@ -63,16 +89,29 @@ ISR(SPI_STC_vect) {
       SPDR = spi_hibyte;
       spi_state = 0;
       break;
-    case 2: // read counts, ch1 hi
-      SPDR = ch1_counts >> 8;
+    case 2: // read count queue, ch1
+      SPDR = ch1_queue[queue_tail];
       spi_state++;
       break;
     case 3: // read counts, ch2 lo
-      SPDR = ch2_counts & 255;
+      SPDR = ch2_queue[queue_tail];
+      queue_tail = (queue_tail+1) & (QUEUE_SIZE-1);
+      spi_readlen--;
+      spi_state = spi_readlen ? 2 : 0;
+      break;
+    case 5: // set PWM mirror
+      pwm_mirror = spi_in;
+      SPDR = 0;
+      spi_state = 0;
+      break;
+    case 6: // set PWM output ch1
+      SPDR = OCR0A;
+      OCR0A = spi_in;
       spi_state++;
       break;
-    case 4: // read counts, ch2 hi
-      SPDR = ch2_counts >> 8;
+    case 7: // set PWM output ch2
+      SPDR = OCR0B;
+      OCR0B = spi_in;
       spi_state = 0;
       break;
   }
@@ -116,8 +155,24 @@ int main() {
   sei();
 
   DDRC = 1<<5;
+  uint16_t itercount = 0;
   for (;;) {
-    PORTC ^= 1<<5;
-    _delay_ms(200);
+    itercount++;
+    if (!itercount)
+      PORTC ^= 1<<5;
+    if (ch1_counts) {
+      if (pwm_mirror) {
+        OCR0A = ch1_counts;
+      }
+      enqueue(ch1_queue, ch1_counts);
+      ch1_counts = 0;
+    }
+    if (ch2_counts) {
+      if (pwm_mirror) {
+        OCR0B = ch2_counts;
+      }
+      enqueue(ch2_queue, ch2_counts);
+      ch2_counts = 0;
+    }
   }
 }

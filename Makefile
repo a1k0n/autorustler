@@ -9,7 +9,7 @@
 # change L to 0xF8 for external low-power oscillator
 
 CC = avr-gcc
-CFLAGS = -Os -DF_CPU=20000000 -mmcu=atmega328p
+CFLAGS = -O2 -DF_CPU=20000000 -mmcu=atmega328p
 
 OBJECTS = main.c
 
