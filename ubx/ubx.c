@@ -4,41 +4,16 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <termios.h>
 #include <unistd.h>
 
 const char ubx_port[] = "/dev/ttyAMA0";
-// #define startup_baudrate 9600
-#define startup_ioctl_baud B115200
+//#define startup_baudrate 9600
+//#define startup_ioctl_baud B9600
+#define startup_ioctl_baud B9600
 #define runtime_baudrate 115200
 #define runtime_ioctl_baud B115200
-
-const char rate_msg[] = "PUBX,41,1,0007,0003,%d,0";  // i don't think we need this?
-
-void init_ubx_protocol(int fd) {
-  struct termios tios;
-  tcgetattr(fd, &tios);
-  cfsetspeed(&tios, startup_ioctl_baud);
-  tcsetattr(fd, TCSADRAIN, &tios);
-
-  // now send baudrate-changing message
-
-  tcgetattr(fd, &tios);
-  cfsetspeed(&tios, runtime_ioctl_baud);
-  tcsetattr(fd, TCSADRAIN, &tios);
-}
-
-// writes CK_A and CK_B into buf[len] and buf[len+1]
-void ubx_checksum(uint8_t* buf, int len) {
-  uint8_t cka = 0, ckb = 0;
-  int i;
-  for (i = 2; i < len-2; i++) {
-    cka += buf[i];
-    ckb += cka;
-  }
-  buf[len-2] = cka;
-  buf[len-1] = ckb;
-}
 
 void process_msg(int msg_class, int msg_id, uint8_t *msgbuf, int msg_length) {
   int i;
@@ -70,6 +45,7 @@ void read_loop(int fd) {
       switch (read_state) {
         case 0:
           if (buf[i] == 0xb5) read_state++;
+          else { putchar(buf[i]); fflush(stdout); }
           break;
         case 1:
           if (buf[i] == 0x62) read_state++;
@@ -124,6 +100,55 @@ void read_loop(int fd) {
   }
 }
 
+void ubx_sendmsg(int fd, int msg_class, int msg_id,
+                 const uint8_t *msg, int msg_len) {
+  static uint8_t header[6] = {0xb5, 0x62}, footer[2];
+  static struct iovec iov[3] = {
+    {header, 6}, {0, 0}, {footer, 2}};
+  uint8_t cka, ckb;
+  int i;
+  iov[1].iov_base = (void*) msg;
+  iov[1].iov_len = msg_len;
+  header[2] = msg_class;
+  cka = ckb = msg_class;
+  header[3] = msg_id;
+  cka += msg_id; ckb += cka;
+  header[4] = msg_len & 0xff;
+  cka += header[4]; ckb += cka;
+  header[5] = msg_len >> 8;
+  cka += header[5]; ckb += cka;
+  for (i = 0; i < msg_len; i++) {
+    cka += msg[i]; ckb += cka;
+  }
+  footer[0] = cka;
+  footer[1] = ckb;
+  int len = writev(fd, iov, 3);
+  for (i = 0; i < 6; i++)
+    printf("%02x ", header[i]);
+  printf("| ");
+  for (i = 0; i < msg_len; i++)
+    printf("%02x ", msg[i]);
+  printf("| ");
+  printf("%02x %02x -- wrote %d\n", footer[0], footer[1], len);
+  if (len == -1) {
+    perror("ubx_sendmsg: writev");
+  }
+}
+
+void init_ubx_protocol(int fd) {
+  struct termios tios;
+  tcgetattr(fd, &tios);
+  cfsetspeed(&tios, startup_ioctl_baud);
+  tcsetattr(fd, TCSADRAIN, &tios);
+
+  // now send baudrate-changing message
+  write(fd, "$PUBX,41,1,0007,0003,115200,0*18\r\n", 34);
+
+  tcgetattr(fd, &tios);
+  cfsetspeed(&tios, runtime_ioctl_baud);
+  tcsetattr(fd, TCSADRAIN, &tios);
+}
+
 int main(int argc, char** argv) {
   // TODO: open serial port, set baudrate 9600,
   // send NMEA-ish UBX message to switch to 115200 + binary protocol
@@ -138,42 +163,9 @@ int main(int argc, char** argv) {
     init_ubx_protocol(fd);
   }
 
-  uint8_t ubx_buf[256] = {
-      0xb5, 0x62,  // sync
-      1, 6,        // NAV-SOL
-//      6, 0,        // CFG-PRT
-//      20, 0,       // length (?)
-      0, 0,       // length (?)
-      1, 0,        // port 1 (UART), reserved
-      0x00, 0x00,  // txReady = 0
-      0x8d, 0,0,0, // mode = 8 data bits, 1 stop bit, no parity
-      0, 0, 0, 0,  // baudrate [filled in below]
-      1, 0, 1, 0,  // in/outProtoMask = UBX only
-      0, 0, 0, 0   // reserved
-  };
-  ubx_buf[6+8] = runtime_baudrate & 0xff;
-  ubx_buf[6+9] = (runtime_baudrate >> 8) & 0xff;
-  ubx_buf[6+10] = (runtime_baudrate >> 16) & 0xff;
-  ubx_buf[6+11] = (runtime_baudrate >> 24) & 0xff;
-
-  int len = 8;
-  ubx_checksum(ubx_buf, len);
-
-  //int len = 28
-  //ubx_checksum(ubx_buf, len);
-  int i;
-  for(i = 0; i < len; i++) {
-    printf("%02x ", ubx_buf[i]);
-  }
-  printf("\n");
-#if 1
-  len = write(fd, ubx_buf, len);
-  if (len == -1) {
-    perror("write");
-  }
+  ubx_sendmsg(fd, 1, 6, NULL, 0);
 
   read_loop(fd);
-#endif
 
   return 0;
 }
