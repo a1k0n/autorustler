@@ -1,6 +1,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -9,8 +10,6 @@
 #include <unistd.h>
 
 const char ubx_port[] = "/dev/ttyAMA0";
-//#define startup_baudrate 9600
-//#define startup_ioctl_baud B9600
 #define startup_ioctl_baud B9600
 #define runtime_baudrate 115200
 #define runtime_ioctl_baud B115200
@@ -24,7 +23,7 @@ void process_msg(int msg_class, int msg_id, uint8_t *msgbuf, int msg_length) {
 }
 
 void read_loop(int fd) {
-  uint8_t buf[256];
+  uint8_t buf[512];
   static uint8_t msgbuf[512];
   static int read_state = 0;
   static int msg_length = 0, msg_ptr = 0;
@@ -81,6 +80,7 @@ void read_loop(int fd) {
             fprintf(stderr, "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
+            process_msg(msg_cls, msg_id, msgbuf, msg_length);
             read_state = 0;
           } else
             read_state++;
@@ -90,6 +90,7 @@ void read_loop(int fd) {
             fprintf(stderr, "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
+            process_msg(msg_cls, msg_id, msgbuf, msg_length);
           } else {
             process_msg(msg_cls, msg_id, msgbuf, msg_length);
           }
@@ -123,6 +124,7 @@ void ubx_sendmsg(int fd, int msg_class, int msg_id,
   footer[0] = cka;
   footer[1] = ckb;
   int len = writev(fd, iov, 3);
+#if 0
   for (i = 0; i < 6; i++)
     printf("%02x ", header[i]);
   printf("| ");
@@ -130,9 +132,20 @@ void ubx_sendmsg(int fd, int msg_class, int msg_id,
     printf("%02x ", msg[i]);
   printf("| ");
   printf("%02x %02x -- wrote %d\n", footer[0], footer[1], len);
+#endif
   if (len == -1) {
     perror("ubx_sendmsg: writev");
   }
+}
+
+void nmea_sendmsg(int fd, const char *msg) {
+  int i, cksum = 0, len = strlen(msg);
+  char footer[6];
+  for (i = 1; i < len; i++)
+    cksum ^= msg[i];
+  sprintf(footer, "*%02x\r\n", cksum);
+  write(fd, msg, len);
+  write(fd, footer, 5);
 }
 
 void init_ubx_protocol(int fd) {
@@ -142,7 +155,10 @@ void init_ubx_protocol(int fd) {
   tcsetattr(fd, TCSADRAIN, &tios);
 
   // now send baudrate-changing message
-  write(fd, "$PUBX,41,1,0007,0003,115200,0*18\r\n", 34);
+  char nmeamsg[256];
+  snprintf(nmeamsg, sizeof(nmeamsg),
+           "$PUBX,41,1,0007,0001,%d,0", runtime_baudrate);
+  nmea_sendmsg(fd, nmeamsg);
 
   tcgetattr(fd, &tios);
   cfsetspeed(&tios, runtime_ioctl_baud);
@@ -163,7 +179,12 @@ int main(int argc, char** argv) {
     init_ubx_protocol(fd);
   }
 
-  ubx_sendmsg(fd, 1, 6, NULL, 0);
+  // now, CFG-MSG and set NAV-SOL output on every epoch
+  uint8_t cfg_msg[] = {
+    1, 6, // class/id of NAV-SOL
+    0, 1, 0, 0, 0, 0  // output once per epoch on port 1
+  };
+  ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
 
   read_loop(fd);
 
