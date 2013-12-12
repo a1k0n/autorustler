@@ -37,7 +37,8 @@ void read_loop(int fd) {
       return;
     }
     for(i = 0; i < len; i++) {
-      if (read_state > 2 && read_state < 7) {
+      // printf("%02x ", buf[i]);
+      if (read_state > 1 && read_state < 7) {
         msg_cka += buf[i];
         msg_ckb += msg_cka;
       }
@@ -49,10 +50,10 @@ void read_loop(int fd) {
         case 1:
           if (buf[i] == 0x62) read_state++;
           else if (buf[i] != 0xb5) read_state = 0;
+          msg_cka = 0; msg_ckb = 0;
           break;
         case 2:
           msg_cls = buf[i]; read_state++;
-          msg_cka = buf[i]; msg_ckb = msg_cka;
           break;
         case 3:
           msg_id = buf[i]; read_state++;
@@ -80,7 +81,6 @@ void read_loop(int fd) {
             fprintf(stderr, "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
-            process_msg(msg_cls, msg_id, msgbuf, msg_length);
             read_state = 0;
           } else
             read_state++;
@@ -90,7 +90,6 @@ void read_loop(int fd) {
             fprintf(stderr, "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
-            process_msg(msg_cls, msg_id, msgbuf, msg_length);
           } else {
             process_msg(msg_cls, msg_id, msgbuf, msg_length);
           }
@@ -98,6 +97,7 @@ void read_loop(int fd) {
           break;
       }
     }
+    // printf("\n");
   }
 }
 
@@ -151,8 +151,17 @@ void nmea_sendmsg(int fd, const char *msg) {
 void init_ubx_protocol(int fd) {
   struct termios tios;
   tcgetattr(fd, &tios);
+  // disable flow control and all that, and ignore break and parity errors
+  tios.c_iflag = IGNBRK | IGNPAR;
+  tios.c_oflag = 0;
+  tios.c_lflag = 0;
   cfsetspeed(&tios, startup_ioctl_baud);
-  tcsetattr(fd, TCSADRAIN, &tios);
+  tcsetattr(fd, TCSAFLUSH, &tios);
+  // the serial port has a brief glitch once we turn it on which generates a
+  // start bit; sleep for 1ms to let it settle
+  usleep(1000);
+
+  write(fd, "\r\n\r\n", 4);
 
   // now send baudrate-changing message
   char nmeamsg[256];
@@ -160,7 +169,8 @@ void init_ubx_protocol(int fd) {
            "$PUBX,41,1,0007,0001,%d,0", runtime_baudrate);
   nmea_sendmsg(fd, nmeamsg);
 
-  tcgetattr(fd, &tios);
+  // not sure whether we should wait for acknowledgement here or what
+
   cfsetspeed(&tios, runtime_ioctl_baud);
   tcsetattr(fd, TCSADRAIN, &tios);
 }
@@ -181,7 +191,7 @@ int main(int argc, char** argv) {
 
   // now, CFG-MSG and set NAV-SOL output on every epoch
   uint8_t cfg_msg[] = {
-    1, 6, // class/id of NAV-SOL
+    1, 2, // class/id of NAV-POSLLH
     0, 1, 0, 0, 0, 0  // output once per epoch on port 1
   };
   ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
