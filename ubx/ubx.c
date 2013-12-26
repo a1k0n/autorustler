@@ -1,3 +1,4 @@
+#include <math.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -14,12 +15,126 @@ const char ubx_port[] = "/dev/ttyAMA0";
 #define runtime_baudrate 115200
 #define runtime_ioctl_baud B115200
 
-void process_msg(int msg_class, int msg_id, uint8_t *msgbuf, int msg_length) {
+void nmea_sendmsg(int fd, const char *msg) {
+  int i, cksum = 0, len = strlen(msg);
+  char footer[6];
+  for (i = 1; i < len; i++)
+    cksum ^= msg[i];
+  sprintf(footer, "*%02x\r\n", cksum);
+  write(fd, msg, len);
+  write(fd, footer, 5);
+}
+
+void ubx_sendmsg(int fd, int msg_class, int msg_id,
+                 const uint8_t *msg, int msg_len) {
+  static uint8_t header[6] = {0xb5, 0x62}, footer[2];
+  static struct iovec iov[3] = {
+    {header, 6}, {0, 0}, {footer, 2}};
+  uint8_t cka, ckb;
   int i;
-  printf("read msg (%02x,%02x): ", msg_class, msg_id);
-  for (i = 0; i < msg_length; i++)
-    printf("%02x ", msgbuf[i]);
-  printf("\n");
+  iov[1].iov_base = (void*) msg;
+  iov[1].iov_len = msg_len;
+  header[2] = msg_class;
+  cka = ckb = msg_class;
+  header[3] = msg_id;
+  cka += msg_id; ckb += cka;
+  header[4] = msg_len & 0xff;
+  cka += header[4]; ckb += cka;
+  header[5] = msg_len >> 8;
+  cka += header[5]; ckb += cka;
+  for (i = 0; i < msg_len; i++) {
+    cka += msg[i]; ckb += cka;
+  }
+  footer[0] = cka;
+  footer[1] = ckb;
+  int len = writev(fd, iov, 3);
+#if 0
+  for (i = 0; i < 6; i++)
+    printf("%02x ", header[i]);
+  printf("| ");
+  for (i = 0; i < msg_len; i++)
+    printf("%02x ", msg[i]);
+  printf("| ");
+  printf("%02x %02x -- wrote %d\n", footer[0], footer[1], len);
+#endif
+  if (len == -1) {
+    perror("ubx_sendmsg: writev");
+  }
+}
+
+void ubx_enable_periodic(int fd, int msgclass, int msgid, int enable) {
+  printf("%sabling (%d,%d)\n", enable ? "en" : "dis", msgclass, msgid);
+  // now, CFG-MSG and set NAV-SOL output on every epoch
+  uint8_t cfg_msg[] = {
+    msgclass, msgid, // class/id of NAV-POSLLH
+    0, enable, 0, 0, 0, 0  // output once per epoch on port 1
+  };
+  ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
+}
+
+struct nav_posllh {
+  uint32_t iTOW;  // millisecond time of week
+  int32_t lon;    // longitude in e7
+  int32_t lat;    // latitude in e7
+  int32_t height; // height in mm
+  int32_t hMSL;   // height above mean sea level
+  uint32_t hAcc;  // horizontal accuracy estimate
+  uint32_t vAcc;  // vertical accuracy estimate
+};
+
+struct nav_posecef {
+  uint32_t iTOW;  // millisecond time of week
+  int32_t ecefX, ecefY, ecefZ; // ECEF position in cm
+  uint32_t pAcc;  // position accuracy estimate
+};
+
+static int32_t ref_lat = -1, ref_lon = -1;
+// mean and precision (= 1/variance) of current lat/lon estimate
+static float mean_lat, mean_lon, prec_latlon;
+// eventually precision will be a 2x2 matrix once we have a heading and a
+// predictive model
+
+void process_msg(int fd, int msg_class, int msg_id, uint8_t *msgbuf, int msg_length) {
+  int i;
+  if (msg_class == 1 && msg_id == 1) {
+    struct nav_posecef *navmsg = (struct nav_posecef*) msgbuf;
+    printf("POS-ECEF @%10d xyz (%d, %d, %d) +- %d\n", navmsg->iTOW,
+           navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ, navmsg->pAcc);
+  } else if (msg_class == 1 && msg_id == 2) {
+    struct nav_posllh *navmsg = (struct nav_posllh*) msgbuf;
+    printf("POS-LLH @%10d lat/long (%10d, %10d) deg; hMSL %dmm hAcc %dmm vAcc %dmm\n",
+           navmsg->iTOW, navmsg->lon, navmsg->lat, navmsg->hMSL,
+           navmsg->hAcc, navmsg->vAcc);
+    float latlon_acc = navmsg->hAcc * 1e-1;
+    if (ref_lat == -1) {
+      // initialize reference lat/lon with first reading, just to give us some
+      // arbitrary reference point near our operational area
+      ref_lat = navmsg->lat;
+      ref_lon = navmsg->lon;
+      mean_lat = 0; mean_lon = 0;
+      // just assuming here that hAcc is about 2 std.devs
+      prec_latlon = 4.0 / (latlon_acc * latlon_acc);
+      return;
+    }
+    int32_t rel_lat = navmsg->lat - ref_lat;
+    int32_t rel_lon = navmsg->lon - ref_lon;
+    float new_prec_latlon = 4.0 / (latlon_acc * latlon_acc);
+    mean_lat = (mean_lat * prec_latlon + rel_lat * new_prec_latlon) / (prec_latlon + new_prec_latlon);
+    mean_lon = (mean_lon * prec_latlon + rel_lon * new_prec_latlon) / (prec_latlon + new_prec_latlon);
+    prec_latlon += new_prec_latlon;
+    printf("%0.9f W, %0.9f N +- %fe-7 (%f -> %f)\n",
+           1e-7*((double)ref_lon + mean_lon),
+           1e-7*((double)ref_lat + mean_lat),
+           1.0/sqrt(prec_latlon), new_prec_latlon, prec_latlon);
+  } else if (msg_class == 5) { // ack/nak
+    printf("%s (%d,%d)\n", msg_id == 1 ? "ack" : "nak", msgbuf[0], msgbuf[1]);
+  } else {
+    printf("read msg (%02x,%02x): ", msg_class, msg_id);
+    for (i = 0; i < msg_length; i++)
+      printf("%02x ", msgbuf[i]);
+    printf("\n");
+    ubx_enable_periodic(fd, msg_class, msg_id, 0);
+  }
 }
 
 void read_loop(int fd) {
@@ -91,7 +206,7 @@ void read_loop(int fd) {
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
           } else {
-            process_msg(msg_cls, msg_id, msgbuf, msg_length);
+            process_msg(fd, msg_cls, msg_id, msgbuf, msg_length);
           }
           read_state = 0;
           break;
@@ -99,53 +214,6 @@ void read_loop(int fd) {
     }
     // printf("\n");
   }
-}
-
-void ubx_sendmsg(int fd, int msg_class, int msg_id,
-                 const uint8_t *msg, int msg_len) {
-  static uint8_t header[6] = {0xb5, 0x62}, footer[2];
-  static struct iovec iov[3] = {
-    {header, 6}, {0, 0}, {footer, 2}};
-  uint8_t cka, ckb;
-  int i;
-  iov[1].iov_base = (void*) msg;
-  iov[1].iov_len = msg_len;
-  header[2] = msg_class;
-  cka = ckb = msg_class;
-  header[3] = msg_id;
-  cka += msg_id; ckb += cka;
-  header[4] = msg_len & 0xff;
-  cka += header[4]; ckb += cka;
-  header[5] = msg_len >> 8;
-  cka += header[5]; ckb += cka;
-  for (i = 0; i < msg_len; i++) {
-    cka += msg[i]; ckb += cka;
-  }
-  footer[0] = cka;
-  footer[1] = ckb;
-  int len = writev(fd, iov, 3);
-#if 0
-  for (i = 0; i < 6; i++)
-    printf("%02x ", header[i]);
-  printf("| ");
-  for (i = 0; i < msg_len; i++)
-    printf("%02x ", msg[i]);
-  printf("| ");
-  printf("%02x %02x -- wrote %d\n", footer[0], footer[1], len);
-#endif
-  if (len == -1) {
-    perror("ubx_sendmsg: writev");
-  }
-}
-
-void nmea_sendmsg(int fd, const char *msg) {
-  int i, cksum = 0, len = strlen(msg);
-  char footer[6];
-  for (i = 1; i < len; i++)
-    cksum ^= msg[i];
-  sprintf(footer, "*%02x\r\n", cksum);
-  write(fd, msg, len);
-  write(fd, footer, 5);
 }
 
 void init_ubx_protocol(int fd) {
@@ -189,12 +257,8 @@ int main(int argc, char** argv) {
     init_ubx_protocol(fd);
   }
 
-  // now, CFG-MSG and set NAV-SOL output on every epoch
-  uint8_t cfg_msg[] = {
-    1, 2, // class/id of NAV-POSLLH
-    0, 1, 0, 0, 0, 0  // output once per epoch on port 1
-  };
-  ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
+  // ubx_enable_periodic(fd, 1,2, 1);  // enable NAV-POSLLH
+  ubx_enable_periodic(fd, 1,1, 1);  // enable NAV-POSECEV
 
   read_loop(fd);
 
