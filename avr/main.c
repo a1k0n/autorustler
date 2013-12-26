@@ -7,6 +7,7 @@
 
 volatile static uint8_t ch1_queue[QUEUE_SIZE], ch2_queue[QUEUE_SIZE];
 volatile static uint8_t queue_head = 0, queue_tail = 0, queue_state = 0;
+static uint16_t battery_voltage = 0;
 // if queue_state is 0, ch1_queue[head] and ch2_queue[head] are both empty
 // if it's 1, then one of ch1_queue or ch2_queue is filled and the other is
 // awaiting the PWM pulse
@@ -81,6 +82,10 @@ ISR(SPI_STC_vect) {
       } else if (spi_in == 0x04) {  // command 0x04: set pwm output
         SPDR = 1;
         spi_state = 6;
+      } else if (spi_in == 0x05) {  // command 0x05: get battery voltage
+        SPDR = battery_voltage & 0xff;
+        spi_hibyte = battery_voltage >> 8;
+        spi_state = 1;
       } else {
         SPDR = 0;
       }
@@ -148,18 +153,29 @@ int main() {
   // Set up TMR1 to count up on each clock cycle (20MHz)
   TCCR1B = 0x01;
 
+  // set up ADC on channel 0
+  PORTC = 0;
+  DDRC = 1<<5;
+  DIDR0 = 0x01;
+  ADMUX = 0xc0;  // internal 1.1V ref, select ADC0
+  ADCSRA = 0x87;  // enable ADC
+
   spi_init();
   pwmcapture_init();
   pwmgen_init();
 
   sei();
 
-  DDRC = 1<<5;
   uint32_t itercount = 0;
   for (;;) {
     itercount++;
-    if (!(itercount&0x7ffff))
+    if (!(itercount&0x7ffff)) {
       PORTC ^= 1<<5;
+      ADCSRA |= _BV(ADSC);
+      while(!bit_is_set(ADCSRA,ADIF));
+      ADCSRA |= _BV(ADIF);
+      battery_voltage = ADC;
+    }
     if (ch1_counts) {
       if (pwm_mirror) {
         OCR0A = ch1_counts;
