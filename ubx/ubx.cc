@@ -10,6 +10,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "vec3.h"
+
 const char ubx_port[] = "/dev/ttyAMA0";
 #define startup_ioctl_baud B9600
 #define runtime_baudrate 115200
@@ -72,68 +74,66 @@ void ubx_enable_periodic(int fd, int msgclass, int msgid, int enable) {
   ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
 }
 
-struct nav_posllh {
-  uint32_t iTOW;  // millisecond time of week
-  int32_t lon;    // longitude in e7
-  int32_t lat;    // latitude in e7
-  int32_t height; // height in mm
-  int32_t hMSL;   // height above mean sea level
-  uint32_t hAcc;  // horizontal accuracy estimate
-  uint32_t vAcc;  // vertical accuracy estimate
-};
-
+// Earth-Centered, Earth-Fixed position message from GPS
 struct nav_posecef {
   uint32_t iTOW;  // millisecond time of week
   int32_t ecefX, ecefY, ecefZ; // ECEF position in cm
   uint32_t pAcc;  // position accuracy estimate
 };
 
-static int32_t ref_lat = -1, ref_lon = -1;
-// mean and precision (= 1/variance) of current lat/lon estimate
-static float mean_lat, mean_lon, prec_latlon;
-// eventually precision will be a 2x2 matrix once we have a heading and a
-// predictive model
+bool have_reference = false;
+// reference position, taken from first measurement
+vec3<uint32_t> ref_ecef(-1, -1, -1);
+// orthonormal basis for local reference plane
+vec3<double> ref_up, ref_north, ref_east;
 
-void process_msg(int fd, int msg_class, int msg_id, uint8_t *msgbuf, int msg_length) {
+// mean and precision (= 1/variance) of current north/east estimate
+vec2<float> mean_pos;
+float prec_ne;  // precision (cm) in local reference plane
+// eventually precision will be a 2x2 matrix once we have a heading and a
+// predictive model, or just a bunch of particles
+
+void compute_refplane() {
+  static const double wgs84_inverse_flattening = 298.257223563;
+  static const double wgs84_stretching = 1.0 / (wgs84_inverse_flattening - 1);
+  ref_up = vec3<double>(ref_ecef.x, ref_ecef.y, ref_ecef.z);
+  ref_up.z += ref_up.z * wgs84_stretching;
+  ref_up.normalize();
+  ref_north = (vec3<double>(0,0,1) - ref_up * ref_up.z).normalize();
+  ref_east = cross(ref_north, ref_up);
+}
+
+void process_msg(int fd, int msg_class, int msg_id,
+                 uint8_t *msgbuf, int msg_length) {
   int i;
-  if (msg_class == 1 && msg_id == 1) {
-    struct nav_posecef *navmsg = (struct nav_posecef*) msgbuf;
-    printf("POS-ECEF @%10d xyz (%d, %d, %d) +- %d\n", navmsg->iTOW,
-           navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ, navmsg->pAcc);
-  } else if (msg_class == 1 && msg_id == 2) {
-    struct nav_posllh *navmsg = (struct nav_posllh*) msgbuf;
-    printf("POS-LLH @%10d lat/long (%10d, %10d) deg; hMSL %dmm hAcc %dmm vAcc %dmm\n",
-           navmsg->iTOW, navmsg->lon, navmsg->lat, navmsg->hMSL,
-           navmsg->hAcc, navmsg->vAcc);
-    float latlon_acc = navmsg->hAcc * 1e-1;
-    if (ref_lat == -1) {
-      // initialize reference lat/lon with first reading, just to give us some
-      // arbitrary reference point near our operational area
-      ref_lat = navmsg->lat;
-      ref_lon = navmsg->lon;
-      mean_lat = 0; mean_lon = 0;
-      // just assuming here that hAcc is about 2 std.devs
-      prec_latlon = 4.0 / (latlon_acc * latlon_acc);
-      return;
-    }
-    int32_t rel_lat = navmsg->lat - ref_lat;
-    int32_t rel_lon = navmsg->lon - ref_lon;
-    float new_prec_latlon = 4.0 / (latlon_acc * latlon_acc);
-    mean_lat = (mean_lat * prec_latlon + rel_lat * new_prec_latlon) / (prec_latlon + new_prec_latlon);
-    mean_lon = (mean_lon * prec_latlon + rel_lon * new_prec_latlon) / (prec_latlon + new_prec_latlon);
-    prec_latlon += new_prec_latlon;
-    printf("%0.9f W, %0.9f N +- %fe-7 (%f -> %f)\n",
-           1e-7*((double)ref_lon + mean_lon),
-           1e-7*((double)ref_lat + mean_lat),
-           1.0/sqrt(prec_latlon), new_prec_latlon, prec_latlon);
-  } else if (msg_class == 5) { // ack/nak
-    printf("%s (%d,%d)\n", msg_id == 1 ? "ack" : "nak", msgbuf[0], msgbuf[1]);
-  } else {
-    printf("read msg (%02x,%02x): ", msg_class, msg_id);
-    for (i = 0; i < msg_length; i++)
-      printf("%02x ", msgbuf[i]);
-    printf("\n");
-    ubx_enable_periodic(fd, msg_class, msg_id, 0);
+  switch ((msg_class << 8) + msg_id) {
+    case 0x0101:  // NAV-POSECEF
+      {
+        struct nav_posecef *navmsg = (struct nav_posecef*) msgbuf;
+        printf("POS-ECEF @%10d xyz (%d, %d, %d) +- %d\n", navmsg->iTOW,
+               navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ, navmsg->pAcc);
+        if (!have_reference) {
+          ref_ecef = vec3<uint32_t>(
+              navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ);
+          have_reference = true;
+          compute_refplane();
+        }
+      }
+      break;
+    case 0x0102:  // NAV-POSLLH (ignored)
+      break;
+    case 0x0501:  // ACK
+    case 0x0500:  // NAK
+      printf("%s (%d,%d)\n", msg_id == 1 ? "ack" : "nak",
+             msgbuf[0], msgbuf[1]);
+      break;
+    default:
+      printf("read msg (%02x,%02x): ", msg_class, msg_id);
+      for (i = 0; i < msg_length; i++)
+        printf("%02x ", msgbuf[i]);
+      printf("\n");
+      // diable unknown messages?
+      // ubx_enable_periodic(fd, msg_class, msg_id, 0);
   }
 }
 
@@ -256,6 +256,8 @@ int main(int argc, char** argv) {
   if (argc < 2) {  // specify an extra argument to warmstart/skip setup
     init_ubx_protocol(fd);
   }
+
+  ubx_sendmsg(fd, 6, 6, NULL, 0);
 
   // ubx_enable_periodic(fd, 1,2, 1);  // enable NAV-POSLLH
   ubx_enable_periodic(fd, 1,1, 1);  // enable NAV-POSECEV

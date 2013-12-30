@@ -1,8 +1,8 @@
-CC = gcc
-CFLAGS = -O3 -Wall
+CXX = g++
+CXXFLAGS = -O3 -Wall
 LDFLAGS = -lm
 
-SRCS = ubx.c
+SRCS = ubx.cc
 
 ubx: $(SRCS)
-	$(CC) $(CFLAGS) -o $@ $(SRCS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $@ $(SRCS) $(LDFLAGS)
