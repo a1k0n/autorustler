@@ -117,6 +117,17 @@ void process_msg(int fd, int msg_class, int msg_id,
               navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ);
           have_reference = true;
           compute_refplane();
+        } else {
+          vec3<int32_t> relpos(
+              navmsg->ecefX - ref_ecef.x,
+              navmsg->ecefY - ref_ecef.y,
+              navmsg->ecefZ - ref_ecef.z);
+          vec3<double> local_pos(
+              ref_east * relpos,
+              ref_north * relpos,
+              ref_up * relpos);
+          printf("(%0.0fN, %0.0fE, %0.0fU)\n",
+                 local_pos.x, local_pos.y, local_pos.z);
         }
       }
       break;
@@ -141,7 +152,7 @@ void read_loop(int fd) {
   uint8_t buf[512];
   static uint8_t msgbuf[512];
   static int read_state = 0;
-  static int msg_length = 0, msg_ptr = 0;
+  static unsigned msg_length = 0, msg_ptr = 0;
   static int msg_cls = 0, msg_id = 0;
   static uint8_t msg_cka = 0, msg_ckb = 0;
   for(;;) {
@@ -237,10 +248,11 @@ void init_ubx_protocol(int fd) {
            "$PUBX,41,1,0007,0001,%d,0", runtime_baudrate);
   nmea_sendmsg(fd, nmeamsg);
 
-  // not sure whether we should wait for acknowledgement here or what
-
+  // add some guard time before and after changing baud rates
+  usleep(10000);
   cfsetspeed(&tios, runtime_ioctl_baud);
   tcsetattr(fd, TCSADRAIN, &tios);
+  usleep(10000);
 }
 
 int main(int argc, char** argv) {

@@ -62,8 +62,8 @@ static inline vec3<T> operator-(const vec3<T>& a) {
   return vec3<T>(-a.x, -a.y, -a.z);
 }
 
-template <class T>
-static inline T operator*(const vec3<T>& a, const vec3<T>& b) {
+template <class T, class U>
+static inline T operator*(const vec3<T>& a, const vec3<U>& b) {
   return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
