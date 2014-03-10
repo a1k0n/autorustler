@@ -20,7 +20,8 @@ ITG3200 gyro:
 21 GYRO_ZOUT_H
 22 GYRO_ZOUT_L
 no fifo, but an interrupt pin.  hmm.  not sure if there's any way to tell if
-there's new data without using the interrupt pin
+there's new data without using the interrupt pin, but a 1kHz samplerate is
+really fast; we'll have to set the bandwidth and assume our own samplerate
 
 ADXL345 accelerometer:
 0x2c - bw_rate - defaults to 0x0a, 100Hz, 50Hz bandwidth
