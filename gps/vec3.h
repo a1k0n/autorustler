@@ -1,6 +1,8 @@
 #ifndef __VEC3_H
 #define __VEC3_H
 
+#include <math.h>
+
 template <class T>
 struct vec2 {
   T x, y;
