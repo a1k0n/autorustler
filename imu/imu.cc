@@ -1,11 +1,6 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <byteswap.h>
-#include <unistd.h>
 #include "./i2c.h"
+#include "./imu.h"
 
 const uint8_t ADDR_ITG3200  = 0x68;
 const uint8_t ADDR_HMC5883L = 0x1e;
@@ -28,15 +23,8 @@ const uint8_t ADDR_ADXL345  = 0x53;
 // on the accelerometer) or flying off a ramp (0g); if it's on the ground and
 // the motor is stopped (0 estimated velocity) then we can zero out the gyro,
 // and calibrate the direction of the accelerometer Y direction.
-//
 
-int main() {
-  int i2cfd = open("/dev/i2c-1", O_RDWR);
-  if (i2cfd == -1) {
-    perror("/dev/i2c-1");
-    return 1;
-  }
-
+int imu_init(int i2cfd) {
   // config gyro
   i2c_write(i2cfd, ADDR_ITG3200, 0x16, 0x18 + 2);  // enable, 100Hz bandwidth
   // config compass
@@ -45,34 +33,35 @@ int main() {
   // config accelerometer
   i2c_write(i2cfd, ADDR_ADXL345, 0x2d, 0x08);  // turn on
   i2c_write(i2cfd, ADDR_ADXL345, 0x31, 0x08);  // FULL_RES
-  for (;;) {
-    uint8_t axis_buf[6];
-    int16_t gyro_x, gyro_y, gyro_z,
-            mag_x, mag_y, mag_z,
-            accel_x, accel_y, accel_z;
-    i2c_read(i2cfd, ADDR_ITG3200, 0x1d, axis_buf, 6);
-    gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // roll
-    gyro_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // pitch
-    gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // yaw
+  return 0;
+}
 
-    i2c_read(i2cfd, ADDR_HMC5883L, 0x03, axis_buf, 6);
-    mag_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // front/side?
-    mag_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // up
-    mag_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // side/front?
+int imu_read(int i2cfd, imu_state *s) {
+  uint8_t axis_buf[6];
+  i2c_read(i2cfd, ADDR_ITG3200, 0x1d, axis_buf, 6);
+  s->gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // roll
+  s->gyro_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // pitch
+  s->gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // yaw
 
-    i2c_read(i2cfd, ADDR_ADXL345, 0x32, axis_buf, 6);
-    accel_x = (*reinterpret_cast<uint16_t*>(axis_buf+0));
-    accel_y = (*reinterpret_cast<uint16_t*>(axis_buf+2));
-    accel_z = (*reinterpret_cast<uint16_t*>(axis_buf+4));
+  i2c_read(i2cfd, ADDR_HMC5883L, 0x03, axis_buf, 6);
+  // facing south-ish: +270, -430, -67
+  // facing north-ish: +420, -230, +60
+  // facing east-ish: +300, -300, +53
+  // facing west-ish: +500, -36, +60
+  // facing up, top towards north: -288, +410, -50
+  // facing up, top towards east: -300, +300, -130
+  // up, towards west: -280, +275, +110
+  // on right side, top toward west: 130, 300, -630
+  // this is confounded by a metal bench, not sure what's going on
+  s->mag_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // front?
+  s->mag_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // up
+  s->mag_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // side?
 
-    fprintf(stderr, "gyro [%+4d %+4d %+4d] mag [%+4d %+4d %+4d] "
-            "acc [%+4d %+4d %+4d]\e[K\r",
-            gyro_x, gyro_y, gyro_z,
-            mag_x, mag_y, mag_z,
-            accel_x, accel_y, accel_z);
-    fflush(stderr);
-    usleep(100000);
-  }
-
+  i2c_read(i2cfd, ADDR_ADXL345, 0x32, axis_buf, 6);
+  // note: not totally calibrated across the three axes; very small offset
+  // error but the z axis seems to have its scale off a bit -- -270 to +245
+  s->accel_x = (*reinterpret_cast<uint16_t*>(axis_buf+0));  // toward back
+  s->accel_y = (*reinterpret_cast<uint16_t*>(axis_buf+2));  // toward right
+  s->accel_z = (*reinterpret_cast<uint16_t*>(axis_buf+4));  // toward ground
   return 0;
 }
