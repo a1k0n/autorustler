@@ -238,7 +238,7 @@ void init_ubx_protocol(int fd) {
   tcsetattr(fd, TCSAFLUSH, &tios);
   // the serial port has a brief glitch once we turn it on which generates a
   // start bit; sleep for 1ms to let it settle
-  usleep(1000);
+  usleep(10000);
 
   write(fd, "\r\n\r\n", 4);
 
@@ -249,10 +249,9 @@ void init_ubx_protocol(int fd) {
   nmea_sendmsg(fd, nmeamsg);
 
   // add some guard time before and after changing baud rates
-  usleep(10000);
+  usleep(100000);
   cfsetspeed(&tios, runtime_ioctl_baud);
   tcsetattr(fd, TCSADRAIN, &tios);
-  usleep(10000);
 }
 
 int main(int argc, char** argv) {
@@ -267,6 +266,8 @@ int main(int argc, char** argv) {
   }
   if (argc < 2) {  // specify an extra argument to warmstart/skip setup
     init_ubx_protocol(fd);
+    close(fd);
+    fd = open(ubx_port, O_RDWR);
   }
 
   ubx_sendmsg(fd, 6, 6, NULL, 0);
