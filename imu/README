@@ -45,3 +45,23 @@ HMC5883L compass:
 0x05:06 - z (up) msb:lsb
 0x07:08 - y (towards pins 9-12) msb:lsb
 0x09 - status - bit 0 set if new data
+
+---
+
+our motion model:
+
+three modes of motion:
+ - A: on the ground, full traction (or slight understeer?)
+ - B: on the ground, rear-wheel skidding
+ - C: off the ground, i.e. jumping off a ramp
+   - unlikely unless we experienced a vertical acceleration beforehand, and are experiencing 0g vertical now
+
+basic motion model:
+ - use verlet integration
+ - servo position estimate <- pwm
+ - yaw rate <- kalman filter(servo position estimate, lateral accel, gyro, compass)
+ - orientation += yaw rate
+ - motor speed estimate <- pwm
+ - velocity <- kalman filter(motor speed estimate, straight accel, gps)
+ - position <- kalman filter(velocity estimate, gps)
+something like that?
