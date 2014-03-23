@@ -75,89 +75,130 @@ int sirf_open() {
   return fd;
 }
 
-void sirf_process_msg(uint8_t *buf, uint16_t len) {
+static inline int32_t geti4(uint8_t *buf) {
+  int32_t x = buf[0] << 24;
+  x += buf[1] << 16;
+  x += buf[2] << 8;
+  x += buf[3];
+  return x;
+}
+
+static inline int16_t geti2(uint8_t *buf) {
+  int16_t x = buf[0] << 8;
+  x += buf[1];
+  return x;
+}
+
+void sirf_process_msg(uint8_t *buf, uint16_t len,
+                      void (*navpos_cb)(const sirf_navdata& data)) {
+  if (len == 0)
+    return;
+  switch (buf[0]) {
+    case 0x02:
+      {
+        if (len != 41)
+          goto badlength;
+        struct sirf_navdata data;
+        data.x = geti4(buf+1);
+        data.y = geti4(buf+5);
+        data.z = geti4(buf+9);
+        data.v8x = geti2(buf+13);
+        data.v8y = geti2(buf+15);
+        data.v8z = geti2(buf+17);
+        data.hdop = buf[20];
+        data.svs = buf[28];
+        navpos_cb(data);
+      }
+      break;
+  }
+#if 0
   for (int i = 0; i < len; i++) {
     printf("%02x", buf[i]);
   }
   printf("\n");
+#endif
+  return;
+
+ badlength:
+  fprintf(stderr, "SiRF: msg %02x bad length %d\n", buf[0], len);
 }
 
-void sirf_read_loop(int fd) {
+bool sirf_poll(int fd, void (*navpos_cb)(const sirf_navdata&)) {
   uint8_t buf[1024];
   static uint8_t msgbuf[1024];
   static int read_state = 0;
   static unsigned msg_length = 0, msg_ptr = 0;
   static int msg_cls = 0, msg_id = 0;
   static uint16_t msg_cksum = 0, input_cksum = 0;
-  for (;;) {
-    int len = read(fd, buf, sizeof(buf));
-    int i;
-    if (len == -1) {
-      perror("read");
-      return;
-    }
-    for (i = 0; i < len; i++) {
-      // printf("%02x ", buf[i]);
-      switch (read_state) {
-        case 0:
-          if (buf[i] == 0xa0) read_state++;
-          break;
-        case 1:
-          read_state++;
-          if (buf[i] != 0xa2) read_state = 0;
-          break;
-        case 2:
-          msg_length = buf[i] << 8;
-          read_state++;
-          break;
-        case 3:
-          msg_length += buf[i];
-          msg_ptr = 0;
-          msg_cksum = 0;
-          if (msg_length > sizeof(msgbuf)) {
-            fprintf(stderr, "SiRF: discarding message length %d\n",
-                    msg_length);
-            read_state = 0;
-          } else {
-            read_state++;
-          }
-          break;
-        case 4:
-          msgbuf[msg_ptr++] = buf[i];
-          msg_cksum += buf[i];
-          if (msg_ptr == msg_length)
-            read_state++;
-          break;
-        case 5:
-          input_cksum = buf[i] << 8;
-          read_state++;
-          break;
-        case 6:
-          input_cksum += buf[i];
-          read_state++;
-          if (input_cksum != (msg_cksum & 0x7fff)) {
-            fprintf(stderr, "SiRF: checksum mismatch, calc %04x got %04x\n",
-                    msg_cksum & 0x7fff, input_cksum);
-            read_state = 0;
-          }
-          break;
-        case 7:
-          read_state++;
-          if (buf[i] != 0xb0) {
-            fprintf(stderr, "SiRF: missing 0xb0 terminator\n");
-            read_state = 0;
-          }
-          break;
-        case 8:
-          read_state = 0;
-          if (buf[i] != 0xb3) {
-            fprintf(stderr, "SiRD: missing 0xb3 terminator\n");
-          } else {
-            sirf_process_msg(msgbuf, msg_length);
-          }
-          break;
-      }
-    }
-    // printf("\n");
+
+  int len = read(fd, buf, sizeof(buf));
+  int i;
+  if (len == -1) {
+    perror("read");
+    return false;
   }
+  for (i = 0; i < len; i++) {
+    // printf("%02x ", buf[i]);
+    switch (read_state) {
+      case 0:
+        if (buf[i] == 0xa0) read_state++;
+        break;
+      case 1:
+        read_state++;
+        if (buf[i] != 0xa2) read_state = 0;
+        break;
+      case 2:
+        msg_length = buf[i] << 8;
+        read_state++;
+        break;
+      case 3:
+        msg_length += buf[i];
+        msg_ptr = 0;
+        msg_cksum = 0;
+        if (msg_length > sizeof(msgbuf)) {
+          fprintf(stderr, "SiRF: discarding message length %d\n",
+                  msg_length);
+          read_state = 0;
+        } else {
+          read_state++;
+        }
+        break;
+      case 4:
+        msgbuf[msg_ptr++] = buf[i];
+        msg_cksum += buf[i];
+        if (msg_ptr == msg_length)
+          read_state++;
+        break;
+      case 5:
+        input_cksum = buf[i] << 8;
+        read_state++;
+        break;
+      case 6:
+        input_cksum += buf[i];
+        read_state++;
+        if (input_cksum != (msg_cksum & 0x7fff)) {
+          fprintf(stderr, "SiRF: checksum mismatch, calc %04x got %04x\n",
+                  msg_cksum & 0x7fff, input_cksum);
+          read_state = 0;
+        }
+        break;
+      case 7:
+        read_state++;
+        if (buf[i] != 0xb0) {
+          fprintf(stderr, "SiRF: missing 0xb0 terminator\n");
+          read_state = 0;
+        }
+        break;
+      case 8:
+        read_state = 0;
+        if (buf[i] != 0xb3) {
+          fprintf(stderr, "SiRD: missing 0xb3 terminator\n");
+        } else {
+          sirf_process_msg(msgbuf, msg_length, navpos_cb);
+        }
+        break;
+    }
+  }
+
+  return true;
 }
