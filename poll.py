@@ -15,11 +15,12 @@ while True:
     data = spi.xfer2([0x02, 0])
     readlen = data[1]
     if readlen > 0:
+        t = time.time()
         data2 = spi.xfer2([0]*readlen*2)
         ch1 = data2[(readlen-1)*2]
         ch2 = data2[(readlen-1)*2+1]
         if ch1 != lastch1 or ch2 != lastch2:
-            sys.stdout.write("\r%3d %3d" % (ch1, ch2))
+            sys.stdout.write("%s %3d %3d\n" % (t, ch1, ch2))
             sys.stdout.flush()
             lastch1, lastch2 = ch1, ch2
-    time.sleep(0.01)
+    time.sleep(0.02)

@@ -29,52 +29,6 @@ void nmea_sendmsg(int fd, const char *msg) {
   write(fd, footer, 5);
 }
 
-}  // empty namespace
-
-int sirf_open() {
-  int fd = open(sirf_port, O_RDWR);
-  if (fd == -1) {
-    perror(sirf_port);
-    return -1;
-  }
-
-  struct termios tios;
-  tcgetattr(fd, &tios);
-  // disable flow control and all that, and ignore break and parity errors
-  tios.c_iflag = IGNBRK | IGNPAR;
-  tios.c_oflag = 0;
-  tios.c_lflag = 0;
-  cfsetspeed(&tios, startup_ioctl_baud);
-  tcsetattr(fd, TCSAFLUSH, &tios);
-  // the serial port has a brief glitch once we turn it on which generates a
-  // start bit; sleep for 1ms to let it settle
-  usleep(10000);
-
-  write(fd, "\r\n\r\n", 4);
-
-  // send baudrate/protocol change message
-  char nmeamsg[256];
-  snprintf(nmeamsg, sizeof(nmeamsg),
-           "$PSRF100,0,%d,8,1,0", runtime_baudrate);
-  nmea_sendmsg(fd, nmeamsg);
-
-  // add some guard time before and after changing baud rates
-  usleep(100000);
-  close(fd);
-  fd = open(sirf_port, O_RDWR);
-  cfsetspeed(&tios, runtime_ioctl_baud);
-  tcsetattr(fd, TCSADRAIN, &tios);
-
-  if (fd == -1) {
-    perror(sirf_port);
-    return -1;
-  }
-
-  // FIXME: sirf_sendmsg
-  // FIXME: sirf_enable_periodic
-  return fd;
-}
-
 static inline int32_t geti4(uint8_t *buf) {
   int32_t x = buf[0] << 24;
   x += buf[1] << 16;
@@ -121,6 +75,52 @@ void sirf_process_msg(uint8_t *buf, uint16_t len,
 
  badlength:
   fprintf(stderr, "SiRF: msg %02x bad length %d\n", buf[0], len);
+}
+
+}  // empty namespace
+
+int sirf_open() {
+  int fd = open(sirf_port, O_RDWR);
+  if (fd == -1) {
+    perror(sirf_port);
+    return -1;
+  }
+
+  struct termios tios;
+  tcgetattr(fd, &tios);
+  // disable flow control and all that, and ignore break and parity errors
+  tios.c_iflag = IGNBRK | IGNPAR;
+  tios.c_oflag = 0;
+  tios.c_lflag = 0;
+  cfsetspeed(&tios, startup_ioctl_baud);
+  tcsetattr(fd, TCSAFLUSH, &tios);
+  // the serial port has a brief glitch once we turn it on which generates a
+  // start bit; sleep for 1ms to let it settle
+  usleep(10000);
+
+  write(fd, "\r\n\r\n", 4);
+
+  // send baudrate/protocol change message
+  char nmeamsg[256];
+  snprintf(nmeamsg, sizeof(nmeamsg),
+           "$PSRF100,0,%d,8,1,0", runtime_baudrate);
+  nmea_sendmsg(fd, nmeamsg);
+
+  // add some guard time before and after changing baud rates
+  usleep(100000);
+  close(fd);
+  fd = open(sirf_port, O_RDWR);
+  cfsetspeed(&tios, runtime_ioctl_baud);
+  tcsetattr(fd, TCSADRAIN, &tios);
+
+  if (fd == -1) {
+    perror(sirf_port);
+    return -1;
+  }
+
+  // FIXME: sirf_sendmsg
+  // FIXME: sirf_enable_periodic
+  return fd;
 }
 
 bool sirf_poll(int fd, void (*navpos_cb)(const sirf_navdata&)) {
