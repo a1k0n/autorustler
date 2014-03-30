@@ -29,6 +29,29 @@ void nmea_sendmsg(int fd, const char *msg) {
   write(fd, footer, 5);
 }
 
+bool sirf_sendmsg(int fd, const uint8_t* msg, int msg_len) {
+  static uint8_t header[2] = {0xa0, 0xa2},
+                 footer[4] = {0, 0, 0xb0, 0xb3};
+  static struct iovec iov[3] = {
+    {header, 2}, {0, 0}, {footer, 4}};
+  uint16_t cksum = 0;
+
+  iov[1].iov_base = msg;
+  iov[1].iov_len = msg_len;
+
+  for (i = 0; i < msg_len; i++) {
+    cksum += msg[i];
+  }
+  footer[0] = (cksum >> 8) & 0x7f;
+  footer[1] = cksum & 255;
+  int len = writev(fd, iov, 3);
+  if (len == -1) {
+    perror("SiRF: writev");
+    return false;
+  }
+  return true;
+}
+
 static inline int32_t geti4(uint8_t *buf) {
   int32_t x = buf[0] << 24;
   x += buf[1] << 16;
@@ -64,13 +87,14 @@ void sirf_process_msg(uint8_t *buf, uint16_t len,
         navpos_cb(data);
       }
       break;
+    default:
+      fprintf(stderr, "SiRF: unknown message ");
+      for (int i = 0; i < len; i++) {
+        printf("%02x", buf[i]);
+      }
+      printf("\n");
+      break;
   }
-#if 0
-  for (int i = 0; i < len; i++) {
-    printf("%02x", buf[i]);
-  }
-  printf("\n");
-#endif
   return;
 
  badlength:
