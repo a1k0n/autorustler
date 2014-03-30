@@ -25,6 +25,8 @@ int main() {
 
   timeval tv0;
   gettimeofday(&tv0, NULL);
+  tv0.tv_usec = 0;
+  tv0.tv_sec++;
   while (!done) {
     imu_state s;
     imu_read(i2cfd, &s);
@@ -36,7 +38,7 @@ int main() {
             s.accel_x, s.accel_y, s.accel_z);
     fflush(stderr);
 #endif
-    printf("%d.%06d %d %d %d %d %d %d %d %d %d\n",
+    printf("%d.%06d %4d %4d %4d %4d %4d %4d %4d %4d %4d\n",
            tv0.tv_sec, tv0.tv_usec,
            s.gyro_x, s.gyro_y, s.gyro_z,
            s.mag_x, s.mag_y, s.mag_z,
@@ -46,7 +48,7 @@ int main() {
     // fixme: use setitimer()/pause()
     // sleep until tv0 + 20ms
     tv0.tv_usec += 20000;
-    if (tv0.tv_usec > 1000000) {
+    if (tv0.tv_usec >= 1000000) {
       tv0.tv_usec -= 1000000;
       tv0.tv_sec += 1;
     }
