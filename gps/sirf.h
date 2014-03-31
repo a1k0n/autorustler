@@ -8,6 +8,8 @@ struct sirf_navdata {
   int16_t v8x, v8y, v8z;  // velocity in 1/8 m/s
   uint8_t hdop;  // dilution of precision in 1/5
   uint8_t svs;  // number of SVs in fix
+  uint16_t gps_week;
+  uint32_t gps_tow;  // time of week
 };
 
 int sirf_open();

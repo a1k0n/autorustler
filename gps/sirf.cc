@@ -36,15 +36,19 @@ bool sirf_sendmsg(int fd, const uint8_t* msg, int msg_len) {
     {header, 2}, {0, 0}, {footer, 4}};
   uint16_t cksum = 0;
 
-  iov[1].iov_base = msg;
+  iov[1].iov_base = const_cast<uint8_t*>(msg);
   iov[1].iov_len = msg_len;
 
-  for (i = 0; i < msg_len; i++) {
+  for (int i = 0; i < msg_len; i++) {
     cksum += msg[i];
   }
   footer[0] = (cksum >> 8) & 0x7f;
   footer[1] = cksum & 255;
   int len = writev(fd, iov, 3);
+  fprintf(stderr, "SiRF: writing ");
+  for (int i = 0; i < msg_len; i++)
+    fprintf(stderr, "%02x ", msg[i]);
+  fprintf(stderr, "cksum %04x -> %02x %02x\n", cksum, footer[0], footer[1]);
   if (len == -1) {
     perror("SiRF: writev");
     return false;
@@ -84,15 +88,30 @@ void sirf_process_msg(uint8_t *buf, uint16_t len,
         data.v8z = geti2(buf+17);
         data.hdop = buf[20];
         data.svs = buf[28];
+        data.gps_week = geti2(buf+22);
+        data.gps_tow = geti4(buf+24);
         navpos_cb(data);
       }
+      break;
+    case 0x0b:
+      fprintf(stderr, "SiRF: ACK message %02x\n", buf[1]);
+      break;
+    case 0x04:
+    case 0x09:
+    case 0x29:
+    case 0x33:
+    case 0x38:
+    case 0x41:  // ???
+    case 0x5c:  // ???
+    case 0x5d:  // ???
+      // ignore
       break;
     default:
       fprintf(stderr, "SiRF: unknown message ");
       for (int i = 0; i < len; i++) {
-        printf("%02x", buf[i]);
+        fprintf(stderr, "%02x", buf[i]);
       }
-      printf("\n");
+      fprintf(stderr, "\n");
       break;
   }
   return;
@@ -141,9 +160,17 @@ int sirf_open() {
     perror(sirf_port);
     return -1;
   }
+  sirf_sendmsg(fd, NULL, 0);
 
-  // FIXME: sirf_sendmsg
-  // FIXME: sirf_enable_periodic
+  usleep(10000);
+
+  // set differential GPS source to SBAS satellite
+  uint8_t dgps_config[] = {0x85, 0x01, 0, 0, 0, 0, 0};
+  sirf_sendmsg(fd, dgps_config, sizeof(dgps_config));
+
+  uint8_t poll_params[] = {0xa8, 0x85};
+  sirf_sendmsg(fd, poll_params, sizeof(poll_params));
+
   return fd;
 }
 
