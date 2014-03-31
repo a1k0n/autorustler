@@ -23,11 +23,9 @@ int main() {
   imu_init(i2cfd);
   printf("# t gx gy gz mx my mz ax ay az\n");
 
-  timeval tv0;
-  gettimeofday(&tv0, NULL);
-  tv0.tv_usec = 0;
-  tv0.tv_sec++;
   while (!done) {
+    timeval tv0;
+    gettimeofday(&tv0, NULL);
     imu_state s;
     imu_read(i2cfd, &s);
 #if 0
@@ -43,18 +41,12 @@ int main() {
            s.gyro_x, s.gyro_y, s.gyro_z,
            s.mag_x, s.mag_y, s.mag_z,
            s.accel_x, s.accel_y, s.accel_z);
+    fflush(stdout);
     timeval tv;
     gettimeofday(&tv, NULL);
-    // fixme: use setitimer()/pause()
-    // sleep until tv0 + 20ms
-    tv0.tv_usec += 20000;
-    if (tv0.tv_usec >= 1000000) {
-      tv0.tv_usec -= 1000000;
-      tv0.tv_sec += 1;
-    }
-    int delay = tv0.tv_usec - tv.tv_usec +
-        1000000*(tv0.tv_sec - tv.tv_sec);
-    usleep(delay);
+    int delay = 20000 - (tv.tv_usec % 20000);
+    if (delay > 0)
+      usleep(delay);
   }
 
   return 0;
