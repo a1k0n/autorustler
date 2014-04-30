@@ -1,1 +1,1 @@
-add_executable(lcdtest lcdtest.cc gpio.cc spi.cc lcd.cc)
+add_executable(lcdtest lcdtest.cc gpio.cc spi.cc lcd.cc font.cc)

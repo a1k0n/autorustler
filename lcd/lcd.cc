@@ -7,7 +7,7 @@
 const int LCD_RST_GPIO = 27;
 const int LCD_DC_GPIO = 17;
 
-bool LCD::init() {
+bool LCD::Init() {
   if (!spi.open("/dev/spidev0.1"))
     return false;
 
@@ -23,7 +23,7 @@ bool LCD::init() {
 
   GPIO_CLR = 1 << LCD_DC_GPIO; // command mode
   txbuf[0] = 0x21;  // turn on chip, horizontal addressing, extended insn set
-  txbuf[1] = 0xB8;  // set LCD Vop
+  txbuf[1] = 0xBC;  // set LCD Vop
   txbuf[2] = 0x04;  // set temp coeff
   txbuf[3] = 0x14;  // LCD bias mode
   txbuf[4] = 0x20;  // turn on chip, horizontal addressing, basic insn set
@@ -36,7 +36,7 @@ bool LCD::init() {
   return true;
 }
 
-void LCD::gotoxy(int x, int y) {
+void LCD::GotoXY(int x, int y) {
   uint8_t txbuf[2];
   txbuf[0] = 0x40 + y;
   txbuf[1] = 0x80 + x;
@@ -44,7 +44,31 @@ void LCD::gotoxy(int x, int y) {
   spi.xfer(txbuf, NULL, 2);
 }
 
-void LCD::draw(const uint8_t* framebuf, int len) {
+void LCD::Draw(const uint8_t* framebuf, int len) {
   GPIO_SET = 1 << LCD_DC_GPIO; // data mode
   spi.xfer(framebuf, NULL, len);
+}
+
+int LCD::WriteString(int x, int y, const char *str, uint8_t *framebuf) {
+  // TODO: bit shifts to handle y&7 != 0
+  y /= 8;
+  int bufptr = y*84 + x;
+  int x0 = x;
+  while (*str && x < 84) {
+    if (x != x0) {
+      // add a single-pixel space between each character
+      x++;
+      framebuf[bufptr++] = 0;
+    }
+    uint8_t c = *str - 0x20;
+    if (c > 95) continue;
+    const uint8_t *glyph = LCD::font[c];
+    for (int i = 0; i < 5; i++, x++) {
+      if (x < 0) continue;
+      if (x >= 84) break;
+      framebuf[bufptr++] = glyph[i];
+    }
+    str++;
+  }
+  return x - x0;
 }
