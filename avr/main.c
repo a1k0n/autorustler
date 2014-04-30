@@ -155,7 +155,7 @@ int main() {
 
   // set up ADC on channel 0
   PORTC = 0;
-  DDRC = 1<<5;
+  DDRC = 1<<3;
   DIDR0 = 0x01;
   ADMUX = 0xc0;  // internal 1.1V ref, select ADC0
   ADCSRA = 0x87;  // enable ADC
@@ -170,7 +170,7 @@ int main() {
   for (;;) {
     itercount++;
     if (!(itercount&0x7ffff)) {
-      PORTC ^= 1<<5;
+      PORTC ^= 1<<3;
       ADCSRA |= _BV(ADSC);
       while(!bit_is_set(ADCSRA,ADIF));
       ADCSRA |= _BV(ADIF);
