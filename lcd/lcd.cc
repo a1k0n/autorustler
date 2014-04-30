@@ -30,7 +30,10 @@ bool LCD::init() {
   txbuf[5] = 0x0c;  // normal mode (not blank or all on)
   txbuf[6] = 0x40;  // y = 0
   txbuf[7] = 0x80;  // x = 0
-  spi.xfer(txbuf, NULL, 8);
+  if (!spi.xfer(txbuf, NULL, 8))
+    return false;
+
+  return true;
 }
 
 void LCD::gotoxy(int x, int y) {
