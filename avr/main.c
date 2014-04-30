@@ -1,6 +1,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/pgmspace.h>
+#include <avr/wdt.h>
 #include <util/delay.h>
 
 #define QUEUE_SIZE 32
@@ -150,6 +151,9 @@ static void pwmgen_init() {
 }
 
 int main() {
+  // enable WDT
+  wdt_enable(WDTO_15MS);
+
   // Set up TMR1 to count up on each clock cycle (20MHz)
   TCCR1B = 0x01;
 
@@ -169,6 +173,7 @@ int main() {
   uint32_t itercount = 0;
   for (;;) {
     itercount++;
+    wdt_reset();
     if (!(itercount&0x7ffff)) {
       PORTC ^= 1<<3;
       ADCSRA |= _BV(ADSC);

@@ -33,4 +33,5 @@ disasm: main.bin
 	avr-objdump -d main.bin
 
 fuses:
-	sudo avrdude -p atmega328p -c linuxspi -P /dev/spidev0.0 -U hfuse:w:0xD9:m -U lfuse:w:0xFF:m
+	sudo avrdude -p atmega328p -c linuxspi -P /dev/spidev0.0 \
+	  -U hfuse:w:0xD9:m -U lfuse:w:0xFF:m -U efuse:w:0x05:m
