@@ -1,2 +1,8 @@
-**/*.hex
-**/*.bin
+CMakeCache.txt
+CMakeFiles
+Makefile
+*.bin
+*.cmake
+*.h264
+*.hex
+*.log

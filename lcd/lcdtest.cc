@@ -10,11 +10,11 @@ const float aspect = 1.175f;
 
 int main() {
   if (!gpio_init())
-    return -1;
+    return 1;
   LCD lcd;
   if (!lcd.Init()) {
     fprintf(stderr, "lcd init fail!");
-    return -1;
+    return 1;
   }
 
   uint8_t screen[84*6];

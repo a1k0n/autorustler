@@ -14,7 +14,7 @@ class LCD {
 
   // Draw a string into a framebuffer starting at upper-left coordinate x,y
   // returns number of horizontal pixels spanned (doesn't do word wrapping)
-  static int WriteString(int x, int y, const char *string, uint8_t* framebuf);
+  static int WriteString(int x, int y, const char *str, uint8_t* framebuf);
 
  private:
   SPIDev spi;
