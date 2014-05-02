@@ -23,7 +23,7 @@ class RadioControl {
   // disables radio control, and sets throttle and steering outputs
   void SetOutputState(const RCState& state);
 
-  float GetBatteryVoltage();
+  bool GetBatteryVoltage(float *voltage);
 
  private:
   SPIDev spi;

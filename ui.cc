@@ -79,19 +79,26 @@ int main() {
       maxstate.mag_z = std::max(maxstate.mag_z, s.mag_z);
     }
 
-    int x = 21*(s.mag_x - minstate.mag_x) /
+    // draw a compass, just a dot over an 'N', 28x24
+    LCD::WriteString(11, 8, "N", screen);
+    int x = 28*(s.mag_x - minstate.mag_x) /
         (maxstate.mag_x - minstate.mag_x + 1);
-    int y = 24*(s.mag_z - minstate.mag_z) /
+    int y = 24 - 24*(s.mag_z - minstate.mag_z) /
         (maxstate.mag_z - minstate.mag_z + 1);
     screen[(y/8)*84 + x] |= 1 << (y&7);
 
     char buf[16];
-    snprintf(buf, sizeof(buf), "x %d", s.mag_x);
-    LCD::WriteString(22, 0, buf, screen);
-    snprintf(buf, sizeof(buf), "y %d", s.mag_y);
-    LCD::WriteString(22, 8, buf, screen);
-    snprintf(buf, sizeof(buf), "z %d", s.mag_z);
-    LCD::WriteString(22, 16, buf, screen);
+    snprintf(buf, sizeof(buf), "gx %d", s.gyro_x);
+    LCD::WriteString(28, 0, buf, screen);
+    snprintf(buf, sizeof(buf), "gy %d", s.gyro_y);
+    LCD::WriteString(28, 8, buf, screen);
+    snprintf(buf, sizeof(buf), "gz %d", s.gyro_z);
+    LCD::WriteString(28, 16, buf, screen);
+
+    float vbat = 0;
+    rc.GetBatteryVoltage(&vbat);
+    snprintf(buf, sizeof(buf), "%0.1fV", vbat);
+    LCD::WriteString(59, 40, buf, screen);
 
     screen[3*84 + rcstate.throttle/4] = 0xff;
     screen[4*84 + rcstate.steering/4] = 0xff;
