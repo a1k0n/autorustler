@@ -24,8 +24,8 @@ bool RadioControl::GetRadioState(RCState* state) {
   }
   spi.xfer(NULL, rxbuf, readlen*2);
   // ignore all but the most recent input
-  state->throttle = rxbuf[(readlen-1)*2 + 1];
-  state->steering = rxbuf[(readlen-1)*2];
+  state->throttle = rxbuf[(readlen-1)*2];
+  state->steering = rxbuf[(readlen-1)*2 + 1];
   return true;
 }
 
