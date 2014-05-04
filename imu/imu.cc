@@ -33,7 +33,7 @@ int imu_init(int i2cfd) {
   i2c_write(i2cfd, ADDR_HMC5883L, 0x02, 0x00);  // continuous measurement
   i2c_write(i2cfd, ADDR_HMC5883L, 0x01, 0x20);  // set gain
   // config accelerometer
-  i2c_write(i2cfd, ADDR_ADXL345, 0x2c, 0x08);  // 25Hz bw, 50Hz samplerate
+  i2c_write(i2cfd, ADDR_ADXL345, 0x2c, 0x09);  // 25Hz bw, 50Hz samplerate
   i2c_write(i2cfd, ADDR_ADXL345, 0x31, 0x08);  // FULL_RES
   i2c_write(i2cfd, ADDR_ADXL345, 0x38, 0x00);  // bypass FIFO, we'll sample @ 50Hz
   i2c_write(i2cfd, ADDR_ADXL345, 0x2d, 0x08);  // turn on
