@@ -30,8 +30,9 @@ int imu_init(int i2cfd) {
   i2c_write(i2cfd, ADDR_ITG3200, 0x15, 19);    // samplerate 50Hz (1000/(19+1))
   i2c_write(i2cfd, ADDR_ITG3200, 0x16, 0x18 + 4);  // enable, 20Hz bandwidth
   // config compass
+  i2c_write(i2cfd, ADDR_HMC5883L, 0x00, 0x38);  // CRA: 75Hz output rate w/ 2 averages
+  i2c_write(i2cfd, ADDR_HMC5883L, 0x01, 0x20);  // CRB: set gain 1090 LSB/Gauss
   i2c_write(i2cfd, ADDR_HMC5883L, 0x02, 0x00);  // continuous measurement
-  i2c_write(i2cfd, ADDR_HMC5883L, 0x01, 0x20);  // set gain
   // config accelerometer
   i2c_write(i2cfd, ADDR_ADXL345, 0x2c, 0x09);  // 25Hz bw, 50Hz samplerate
   i2c_write(i2cfd, ADDR_ADXL345, 0x31, 0x08);  // FULL_RES

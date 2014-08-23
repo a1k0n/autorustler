@@ -37,6 +37,8 @@ bool RadioControl::GetBatteryVoltage(float *voltage) {
   if (spi.xfer(txbuf, rxbuf, 3) != 3)
     return false;
   uint16_t adc = (rxbuf[2]<<8) + rxbuf[1];
+  if (adc > 1023)  // FIXME: sometimes we get junk
+    return false;
   *voltage = (kR1 + kR2) * kVRef * adc / (1024.0 * kR2);
   return true;
 }
