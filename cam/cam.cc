@@ -1,4 +1,3 @@
-#include <bcm_host.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -96,8 +95,6 @@ static void camera_buffer_callback(MMAL_PORT_T *port,
 }
 
 int main(int argc, const char **argv) {
-  bcm_host_init();
-
   MMAL_COMPONENT_T *camera = NULL;
   MMAL_STATUS_T status;
 
@@ -113,9 +110,6 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "cannot enable camera\n");
     return 1;
   }
-
-  printf("woo, created camera with %d outputs, now what?\n",
-         camera->output_num);
 
   MMAL_PARAMETER_CAMERA_CONFIG_T cam_config = {
     { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },

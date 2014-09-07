@@ -1,3 +1,3 @@
 add_executable(cam cam.cc)
 
-target_link_libraries(cam bcm_host mmal)
+target_link_libraries(cam mmal)
