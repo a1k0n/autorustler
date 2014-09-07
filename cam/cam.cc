@@ -119,12 +119,12 @@ int main(int argc, const char **argv) {
 
   MMAL_PARAMETER_CAMERA_CONFIG_T cam_config = {
     { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
-    .max_stills_w = 400,
-    .max_stills_h = 300,
+    .max_stills_w = 320,
+    .max_stills_h = 240,
     .stills_yuv422 = 0,
     .one_shot_stills = 0,
-    .max_preview_video_w = 400,
-    .max_preview_video_h = 300,
+    .max_preview_video_w = 320,
+    .max_preview_video_h = 240,
     .num_preview_video_frames = 3,
     .stills_capture_circular_buffer_height = 0,
     .fast_preview_resume = 0,
@@ -142,12 +142,12 @@ int main(int argc, const char **argv) {
 
   preview_port->format->encoding = MMAL_ENCODING_OPAQUE;
   preview_port->format->encoding_variant = MMAL_ENCODING_I420;
-  preview_port->format->es->video.width = 416;
-  preview_port->format->es->video.height = 304;
+  preview_port->format->es->video.width = 320;
+  preview_port->format->es->video.height = 240;
   preview_port->format->es->video.crop.x = 0;
   preview_port->format->es->video.crop.y = 0;
-  preview_port->format->es->video.crop.width = 400;
-  preview_port->format->es->video.crop.height = 300;
+  preview_port->format->es->video.crop.width = 320;
+  preview_port->format->es->video.crop.height = 240;
   preview_port->format->es->video.frame_rate.num = 0;
   preview_port->format->es->video.frame_rate.den = 1;
 
@@ -158,8 +158,8 @@ int main(int argc, const char **argv) {
   }
 
   mmal_format_full_copy(video_port->format, preview_port->format);
-  video_port->format->encoding = MMAL_ENCODING_BGR24;
-  video_port->format->encoding_variant = MMAL_ENCODING_BGR24;
+  video_port->format->encoding = MMAL_ENCODING_I420;
+  video_port->format->encoding_variant = MMAL_ENCODING_I420;
   video_port->format->es->video.frame_rate.num = 10;
   video_port->format->es->video.frame_rate.den = 1;
   status = mmal_port_format_commit(video_port);
@@ -172,19 +172,6 @@ int main(int argc, const char **argv) {
   if (video_port->buffer_num < 3)
     video_port->buffer_num = 3;
 
-  mmal_format_full_copy(still_port->format, preview_port->format);
-  // format->encoding = MMAL_ENCODING_I420;
-  preview_port->format->encoding = MMAL_ENCODING_BGR24;
-  preview_port->format->encoding_variant = MMAL_ENCODING_BGR24;
-  if (still_port->buffer_size < still_port->buffer_size_min)
-    still_port->buffer_size = still_port->buffer_size_min;
-  still_port->buffer_num = still_port->buffer_num_recommended;
-  status = mmal_port_format_commit(still_port);
-  if (status != MMAL_SUCCESS) {
-    fprintf(stderr, "cannot set still port format\n");
-    return 1;
-  }
-
   status = mmal_component_enable(camera);
   if (status != MMAL_SUCCESS) {
     fprintf(stderr, "cannot enable camera\n");
@@ -192,8 +179,6 @@ int main(int argc, const char **argv) {
   }
   // the red LED should be on now.
 
-  fprintf(stderr, "still port %s: %d buffers x %d bytes\n",
-          still_port->name, still_port->buffer_num, still_port->buffer_size);
   fprintf(stderr, "video port %s: %d buffers x %d bytes\n",
           video_port->name, video_port->buffer_num, video_port->buffer_size);
 
@@ -267,9 +252,7 @@ int main(int argc, const char **argv) {
     }
   }
 
-  // TODO: burst capture?
-
-  sleep(1);  // wait one second for auto-exposure
+  sleep(1);  // wait one second for auto-exposure to come up to speed
 
   // enable capturing
   struct timeval t;
