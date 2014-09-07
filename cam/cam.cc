@@ -1,6 +1,7 @@
 #include <bcm_host.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #include "interface/mmal/mmal.h"
 #include "interface/mmal/mmal_buffer.h"
@@ -46,7 +47,10 @@ static void camera_buffer_callback(MMAL_PORT_T *port,
 
   int bytes_written = buffer->length;
 
-  fprintf(stderr, "camera buffer callback: %d bytes\n", buffer->length);
+  struct timeval t;
+  gettimeofday(&t, NULL);
+  fprintf(stderr, "%d.%06d: camera buffer callback: %d bytes\n",
+         t.tv_sec, t.tv_usec, buffer->length);
 
   if (buffer->length) {
     mmal_buffer_header_mem_lock(buffer);
@@ -118,7 +122,7 @@ int main(int argc, const char **argv) {
     .max_stills_w = 400,
     .max_stills_h = 300,
     .stills_yuv422 = 0,
-    .one_shot_stills = 1,
+    .one_shot_stills = 0,
     .max_preview_video_w = 400,
     .max_preview_video_h = 300,
     .num_preview_video_frames = 3,
@@ -136,17 +140,16 @@ int main(int argc, const char **argv) {
   MMAL_PORT_T *video_port = camera->output[1];
   MMAL_PORT_T *still_port = camera->output[2];
 
-  MMAL_ES_FORMAT_T *format = preview_port->format;
-  format->encoding = MMAL_ENCODING_OPAQUE;
-  format->encoding_variant = MMAL_ENCODING_I420;
-  format->es->video.width = 416;
-  format->es->video.height = 304;
-  format->es->video.crop.x = 0;
-  format->es->video.crop.y = 0;
-  format->es->video.crop.width = 400;
-  format->es->video.crop.height = 300;
-  format->es->video.frame_rate.num = 0;
-  format->es->video.frame_rate.den = 1;
+  preview_port->format->encoding = MMAL_ENCODING_OPAQUE;
+  preview_port->format->encoding_variant = MMAL_ENCODING_I420;
+  preview_port->format->es->video.width = 416;
+  preview_port->format->es->video.height = 304;
+  preview_port->format->es->video.crop.x = 0;
+  preview_port->format->es->video.crop.y = 0;
+  preview_port->format->es->video.crop.width = 400;
+  preview_port->format->es->video.crop.height = 300;
+  preview_port->format->es->video.frame_rate.num = 0;
+  preview_port->format->es->video.frame_rate.den = 1;
 
   status = mmal_port_format_commit(preview_port);
   if (status != MMAL_SUCCESS) {
@@ -154,30 +157,25 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  mmal_format_full_copy(video_port->format, format);
-  // Ensure there are enough buffers to avoid dropping frames
+  mmal_format_full_copy(video_port->format, preview_port->format);
+  video_port->format->encoding = MMAL_ENCODING_BGR24;
+  video_port->format->encoding_variant = MMAL_ENCODING_BGR24;
+  video_port->format->es->video.frame_rate.num = 10;
+  video_port->format->es->video.frame_rate.den = 1;
   status = mmal_port_format_commit(video_port);
   if (status != MMAL_SUCCESS) {
     fprintf(stderr, "cannot set video port format\n");
     return 1;
   }
 
+  // Ensure there are enough buffers to avoid dropping frames
   if (video_port->buffer_num < 3)
     video_port->buffer_num = 3;
 
-  format = still_port->format;
+  mmal_format_full_copy(still_port->format, preview_port->format);
   // format->encoding = MMAL_ENCODING_I420;
-  format->encoding = MMAL_ENCODING_BGR24;
-  format->encoding_variant = MMAL_ENCODING_BGR24;
-  format->es->video.width = 416;
-  format->es->video.height = 304;
-  format->es->video.crop.x = 0;
-  format->es->video.crop.y = 0;
-  format->es->video.crop.width = 400;
-  format->es->video.crop.height = 300;
-  format->es->video.frame_rate.num = 0;
-  format->es->video.frame_rate.den = 1;
-
+  preview_port->format->encoding = MMAL_ENCODING_BGR24;
+  preview_port->format->encoding_variant = MMAL_ENCODING_BGR24;
   if (still_port->buffer_size < still_port->buffer_size_min)
     still_port->buffer_size = still_port->buffer_size_min;
   still_port->buffer_num = still_port->buffer_num_recommended;
@@ -196,10 +194,12 @@ int main(int argc, const char **argv) {
 
   fprintf(stderr, "still port %s: %d buffers x %d bytes\n",
           still_port->name, still_port->buffer_num, still_port->buffer_size);
+  fprintf(stderr, "video port %s: %d buffers x %d bytes\n",
+          video_port->name, video_port->buffer_num, video_port->buffer_size);
 
   // Create pool of buffer headers for the output port to consume
   camera_pool = mmal_port_pool_create(
-      still_port, still_port->buffer_num, still_port->buffer_size);
+      video_port, video_port->buffer_num, video_port->buffer_size);
   if (!camera_pool) {
     fprintf(stderr, "cannot create buffer header pool for still port\n");
     return 1;
@@ -233,7 +233,8 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  status = mmal_port_enable(still_port, camera_buffer_callback);
+  // status = mmal_port_enable(still_port, camera_buffer_callback);
+  status = mmal_port_enable(video_port, camera_buffer_callback);
   if (status != MMAL_SUCCESS) {
     fprintf(stderr, "Failed to setup camera output\n");
     return 1;
@@ -259,7 +260,7 @@ int main(int argc, const char **argv) {
               q);
     }
 
-    if (mmal_port_send_buffer(still_port, buffer)!= MMAL_SUCCESS) {
+    if (mmal_port_send_buffer(video_port, buffer)!= MMAL_SUCCESS) {
       fprintf(stderr,
               "Unable to send a buffer to camera output port (%d)\n",
               q);
@@ -271,22 +272,14 @@ int main(int argc, const char **argv) {
   sleep(1);  // wait one second for auto-exposure
 
   // enable capturing
-  if (mmal_port_parameter_set_boolean(still_port, MMAL_PARAMETER_CAPTURE, 1)
+  struct timeval t;
+  gettimeofday(&t, NULL);
+  if (mmal_port_parameter_set_boolean(video_port, MMAL_PARAMETER_CAPTURE, 1)
       != MMAL_SUCCESS) {
     fprintf(stderr, "failed to start capture\n");
     return 1;
   }
-  fprintf(stderr, "started capture 1\n");
-
-  sleep(1);
-
-  // enable capturing
-  if (mmal_port_parameter_set_boolean(still_port, MMAL_PARAMETER_CAPTURE, 1)
-      != MMAL_SUCCESS) {
-    fprintf(stderr, "failed to start capture\n");
-    return 1;
-  }
-  fprintf(stderr, "started capture 2\n");
+  fprintf(stderr, "%d.%06d started capture 1\n", t.tv_sec, t.tv_usec);
 
   sleep(1);
 
