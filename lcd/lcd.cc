@@ -21,7 +21,7 @@ bool LCD::Init() {
   GPIO_SET = 1 << LCD_RST_GPIO;
   usleep(10);
 
-  GPIO_CLR = 1 << LCD_DC_GPIO; // command mode
+  GPIO_CLR = 1 << LCD_DC_GPIO;  // command mode
   txbuf[0] = 0x21;  // turn on chip, horizontal addressing, extended insn set
   txbuf[1] = 0xBC;  // set LCD Vop
   txbuf[2] = 0x04;  // set temp coeff
@@ -40,17 +40,17 @@ void LCD::GotoXY(int x, int y) {
   uint8_t txbuf[2];
   txbuf[0] = 0x40 + y;
   txbuf[1] = 0x80 + x;
-  GPIO_CLR = 1 << LCD_DC_GPIO; // command mode
+  GPIO_CLR = 1 << LCD_DC_GPIO;  // command mode
   spi.xfer(txbuf, NULL, 2);
 }
 
 void LCD::Draw(const uint8_t* framebuf, int len) {
-  GPIO_SET = 1 << LCD_DC_GPIO; // data mode
+  GPIO_SET = 1 << LCD_DC_GPIO;  // data mode
   spi.xfer(framebuf, NULL, len);
 }
 
 int LCD::WriteString(int x, int y, const char *str, uint8_t *framebuf) {
-  // TODO: bit shifts to handle y&7 != 0
+  // TODO(a1k0n): bit shifts to handle y&7 != 0
   y /= 8;
   int bufptr = y*84 + x;
   int x0 = x;

@@ -6,7 +6,7 @@
 // Earth-Centered, Earth-Fixed position message from GPS
 struct nav_posecef {
   uint32_t iTOW;  // millisecond time of week
-  int32_t ecefX, ecefY, ecefZ; // ECEF position in cm
+  int32_t ecefX, ecefY, ecefZ;  // ECEF position in cm
   uint32_t pAcc;  // position accuracy estimate
 };
 

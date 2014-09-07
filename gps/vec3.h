@@ -1,5 +1,5 @@
-#ifndef __VEC3_H
-#define __VEC3_H
+#ifndef GPS_VEC3_H_
+#define GPS_VEC3_H_
 
 #include <math.h>
 
@@ -87,4 +87,4 @@ static inline vec3<T> cross(const vec3<T>& a, const vec3<T>& b) {
       a.x*b.y - a.y*b.x);
 }
 
-#endif  // __VEC3_H
+#endif  // GPS_VEC3_H_

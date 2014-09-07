@@ -6,18 +6,15 @@ const uint8_t ADDR_ITG3200  = 0x68;
 const uint8_t ADDR_HMC5883L = 0x1e;
 const uint8_t ADDR_ADXL345  = 0x53;
 
-// TODO: how do i set the i2c clock rate?
-// we should be able to crank it up to 400kHz
-
-
-// TODO: calibrate the compass.  there's a constant magnetic field added to
-// earth's magnetic north, and we have to estimate and cancel it.
-// we may also need to compensate for the motor's magnetic fields when it's
-// running?
-// TODO: AGC for the compass.  you can adjust the gain, so we need to try to
-// maximize the magnitude without overflowing the range.
-// TODO: calibrate the gyro.  it also has a constant offset when nothing is
-// moving, it seems.
+// TODO(a1k0n): calibrate the compass.  there's a constant magnetic field added
+// to earth's magnetic north, and we have to estimate and cancel it.  we may
+// also need to compensate for the motor's magnetic fields when it's running?
+//
+// TODO(a1k0n): AGC for the compass.  you can adjust the gain, so we need to
+// try to maximize the magnitude without overflowing the range.
+//
+// TODO(a1k0n): calibrate the gyro.  it also has a constant offset when nothing
+// is moving, it seems.
 //
 // our motion model should figure out whether the car is on the ground (1g down
 // on the accelerometer) or flying off a ramp (0g); if it's on the ground and
@@ -30,13 +27,13 @@ int imu_init(int i2cfd) {
   i2c_write(i2cfd, ADDR_ITG3200, 0x15, 19);    // samplerate 50Hz (1000/(19+1))
   i2c_write(i2cfd, ADDR_ITG3200, 0x16, 0x18 + 4);  // enable, 20Hz bandwidth
   // config compass
-  i2c_write(i2cfd, ADDR_HMC5883L, 0x00, 0x38);  // CRA: 75Hz output rate w/ 2 averages
+  i2c_write(i2cfd, ADDR_HMC5883L, 0x00, 0x38);  // CRA: 75Hz rate w/ 2 averages
   i2c_write(i2cfd, ADDR_HMC5883L, 0x01, 0x20);  // CRB: set gain 1090 LSB/Gauss
   i2c_write(i2cfd, ADDR_HMC5883L, 0x02, 0x00);  // continuous measurement
   // config accelerometer
   i2c_write(i2cfd, ADDR_ADXL345, 0x2c, 0x09);  // 25Hz bw, 50Hz samplerate
   i2c_write(i2cfd, ADDR_ADXL345, 0x31, 0x08);  // FULL_RES
-  i2c_write(i2cfd, ADDR_ADXL345, 0x38, 0x00);  // bypass FIFO, we'll sample @ 50Hz
+  i2c_write(i2cfd, ADDR_ADXL345, 0x38, 0x00);  // bypass FIFO, sample @ 50Hz
   i2c_write(i2cfd, ADDR_ADXL345, 0x2d, 0x08);  // turn on
   return 0;
 }

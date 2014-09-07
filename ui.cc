@@ -85,7 +85,7 @@ int main() {
         (maxstate.mag_x - minstate.mag_x + 1);
     int y = 24 - 24*(s.mag_z - minstate.mag_z) /
         (maxstate.mag_z - minstate.mag_z + 1);
-    screen[(y/8)*84 + x] |= 1 << (y&7);
+    screen[(y/8)*84 + x] |= 1 << (y & 7);
 
     char buf[16];
     snprintf(buf, sizeof(buf), "gx %d", s.gyro_x);

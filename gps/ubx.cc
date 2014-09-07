@@ -70,7 +70,7 @@ void ubx_enable_periodic(int fd, int msgclass, int msgid, int enable) {
           msgclass, msgid);
   // now, CFG-MSG and set NAV-SOL output on every epoch
   uint8_t cfg_msg[] = {
-    msgclass, msgid, // class/id of NAV-POSLLH
+    msgclass, msgid,       // class/id of NAV-POSLLH
     0, enable, 0, 0, 0, 0  // output once per epoch on port 1
   };
   ubx_sendmsg(fd, 6, 1, cfg_msg, 8);

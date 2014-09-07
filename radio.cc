@@ -1,5 +1,5 @@
-#include <algorithm>
 #include <stdlib.h>
+#include <algorithm>
 
 #include "lcd/spi.h"
 #include "./radio.h"
@@ -36,7 +36,7 @@ bool RadioControl::GetBatteryVoltage(float *voltage) {
   uint8_t txbuf[3] = {0x05, 0, 0}, rxbuf[3];
   if (spi.xfer(txbuf, rxbuf, 3) != 3)
     return false;
-  uint16_t adc = (rxbuf[2]<<8) + rxbuf[1];
+  uint16_t adc = (rxbuf[2] << 8) + rxbuf[1];
   if (adc > 1023)  // FIXME: sometimes we get junk
     return false;
   *voltage = (kR1 + kR2) * kVRef * adc / (1024.0 * kR2);
