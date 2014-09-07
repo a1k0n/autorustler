@@ -9,6 +9,7 @@ add_executable(ui ui.cc lcd/gpio.cc lcd/spi.cc lcd/font.cc lcd/lcd.cc
 
 add_executable(log log.cc lcd/spi.cc imu/imu.cc imu/i2c.cc radio.cc)
 
+include_directories(${PROJECT_SOURCE_DIR})
 include_directories(userland)
 include_directories(userland/interface/vcos/pthreads)
 include_directories(userland/interface/vmcs_host/linux)

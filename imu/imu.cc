@@ -1,6 +1,6 @@
 #include <byteswap.h>
-#include "./i2c.h"
-#include "./imu.h"
+#include "imu/i2c.h"
+#include "imu/imu.h"
 
 const uint8_t ADDR_ITG3200  = 0x68;
 const uint8_t ADDR_HMC5883L = 0x1e;
