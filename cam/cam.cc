@@ -86,7 +86,7 @@ static void camera_buffer_callback(MMAL_PORT_T *port,
 
     if (!new_buffer || status != MMAL_SUCCESS)
       fprintf(stderr, "Unable to return the buffer to the "
-              "camera still port\n");
+              "camera video port\n");
   }
 
   // if (complete) {
@@ -133,33 +133,16 @@ int main(int argc, const char **argv) {
 
   mmal_port_parameter_set(camera->control, &cam_config.hdr);
 
-  // TODO: look at all the junk set here:
-  // raspicamcontrol_set_all_parameters(camera, &state->camera_parameters);
-
-  MMAL_PORT_T *preview_port = camera->output[0];
   MMAL_PORT_T *video_port = camera->output[1];
-  MMAL_PORT_T *still_port = camera->output[2];
 
-  preview_port->format->encoding = MMAL_ENCODING_OPAQUE;
-  preview_port->format->encoding_variant = MMAL_ENCODING_I420;
-  preview_port->format->es->video.width = 320;
-  preview_port->format->es->video.height = 240;
-  preview_port->format->es->video.crop.x = 0;
-  preview_port->format->es->video.crop.y = 0;
-  preview_port->format->es->video.crop.width = 320;
-  preview_port->format->es->video.crop.height = 240;
-  preview_port->format->es->video.frame_rate.num = 0;
-  preview_port->format->es->video.frame_rate.den = 1;
-
-  status = mmal_port_format_commit(preview_port);
-  if (status != MMAL_SUCCESS) {
-    fprintf(stderr, "cannot set preview port format\n");
-    return 1;
-  }
-
-  mmal_format_full_copy(video_port->format, preview_port->format);
   video_port->format->encoding = MMAL_ENCODING_I420;
   video_port->format->encoding_variant = MMAL_ENCODING_I420;
+  video_port->format->es->video.width = 320;
+  video_port->format->es->video.height = 240;
+  video_port->format->es->video.crop.x = 0;
+  video_port->format->es->video.crop.y = 0;
+  video_port->format->es->video.crop.width = 320;
+  video_port->format->es->video.crop.height = 240;
   video_port->format->es->video.frame_rate.num = 10;
   video_port->format->es->video.frame_rate.den = 1;
   status = mmal_port_format_commit(video_port);
@@ -177,8 +160,8 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "cannot enable camera\n");
     return 1;
   }
-  // the red LED should be on now.
 
+  // the red LED should be on now.
   fprintf(stderr, "video port %s: %d buffers x %d bytes\n",
           video_port->name, video_port->buffer_num, video_port->buffer_size);
 
@@ -186,20 +169,7 @@ int main(int argc, const char **argv) {
   camera_pool = mmal_port_pool_create(
       video_port, video_port->buffer_num, video_port->buffer_size);
   if (!camera_pool) {
-    fprintf(stderr, "cannot create buffer header pool for still port\n");
-    return 1;
-  }
-
-  // create a null sink for preview, which we don't need
-  MMAL_COMPONENT_T *nullsink = NULL;
-  status = mmal_component_create("vc.null_sink", &nullsink);
-  if (status != MMAL_SUCCESS) {
-    fprintf(stderr, "cannot create null sink\n");
-    return 1;
-  }
-  status = mmal_component_enable(nullsink);
-  if (status != MMAL_SUCCESS) {
-    fprintf(stderr, "cannot enable null sink\n");
+    fprintf(stderr, "cannot create buffer header pool for video port\n");
     return 1;
   }
 
@@ -209,23 +179,13 @@ int main(int argc, const char **argv) {
     return 1;
   }
 
-  fprintf(stderr, "Starting component connection stage\n");
-  MMAL_CONNECTION_T *preview_connection;
-  status = connect_ports(preview_port, nullsink->input[0],
-                         &preview_connection);
-  if (status != MMAL_SUCCESS) {
-    fprintf(stderr, "cannot connect null sink input to preview port\n");
-    return 1;
-  }
+  fprintf(stderr, "Starting video\n");
 
-  // status = mmal_port_enable(still_port, camera_buffer_callback);
   status = mmal_port_enable(video_port, camera_buffer_callback);
   if (status != MMAL_SUCCESS) {
     fprintf(stderr, "Failed to setup camera output\n");
     return 1;
   }
-
-  fprintf(stderr, "Starting video preview\n");
 
   // set shutter speed to auto (it probably was already?)
   if (mmal_port_parameter_set_uint32(
@@ -262,7 +222,7 @@ int main(int argc, const char **argv) {
     fprintf(stderr, "failed to start capture\n");
     return 1;
   }
-  fprintf(stderr, "%d.%06d started capture 1\n", t.tv_sec, t.tv_usec);
+  fprintf(stderr, "%d.%06d started capture\n", t.tv_sec, t.tv_usec);
 
   sleep(1);
 
