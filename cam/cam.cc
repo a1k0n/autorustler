@@ -77,18 +77,17 @@ bool Camera::Init(int width, int height, int fps) {
   }
 
   MMAL_PARAMETER_CAMERA_CONFIG_T cam_config = {
-    { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) },
-    .max_stills_w = width,
-    .max_stills_h = height,
-    .stills_yuv422 = 0,
-    .one_shot_stills = 0,
-    .max_preview_video_w = width,
-    .max_preview_video_h = height,
-    .num_preview_video_frames = 3,
-    .stills_capture_circular_buffer_height = 0,
-    .fast_preview_resume = 0,
-    .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC
-  };
+    { MMAL_PARAMETER_CAMERA_CONFIG, sizeof(cam_config) }};
+  cam_config.max_stills_w = width;
+  cam_config.max_stills_h = height;
+  cam_config.stills_yuv422 = 0;
+  cam_config.one_shot_stills = 0;
+  cam_config.max_preview_video_w = width;
+  cam_config.max_preview_video_h = height;
+  cam_config.num_preview_video_frames = 3;
+  cam_config.stills_capture_circular_buffer_height = 0;
+  cam_config.fast_preview_resume = 0;
+  cam_config.use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC;
 
   mmal_port_parameter_set(camera_->control, &cam_config.hdr);
 
