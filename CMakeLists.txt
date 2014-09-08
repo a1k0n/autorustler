@@ -16,3 +16,4 @@ include_directories(userland/interface/vmcs_host/linux)
 include_directories(userland/host_applications/linux/libs/bcm_host/include)
 
 add_subdirectory(cam)
+add_subdirectory(gps)
