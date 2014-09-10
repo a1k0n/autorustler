@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -14,7 +15,11 @@ class Recorder: public CameraReceiver {
   Recorder() { output_file_ = NULL; frame_ = 0; }
 
   bool Init(const char *fname) {
-    output_file_ = fopen(fname, "wb");
+    if (!strcmp(fname, "-")) {
+      output_file_ = stdout;
+    } else {
+      output_file_ = fopen(fname, "wb");
+    }
     if (!output_file_) {
       perror(fname);
       return false;
@@ -40,8 +45,13 @@ class Recorder: public CameraReceiver {
   int frame_;
 };
 
-int main() {
+int main(int argc, char *argv[]) {
   signal(SIGINT, handle_sigint);
+
+  if (argc < 2) {
+    fprintf(stderr, "%s [output.yuv]\n", argv[0]);
+    return 1;
+  }
 
   if (!Camera::Init(320, 240, 20))
     return 1;
@@ -51,7 +61,7 @@ int main() {
   fprintf(stderr, "%d.%06d camera on\n", t.tv_sec, t.tv_usec);
 
   Recorder r;
-  if (!r.Init("output.yuv"))
+  if (!r.Init(argv[1]))
     return 1;
 
   sleep(1);  // wait one second for auto-exposure to come up to speed

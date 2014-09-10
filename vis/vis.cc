@@ -77,7 +77,12 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  FILE *fp = fopen(argv[1], "rb");
+  FILE *fp = NULL;
+  if (!strcmp(argv[1], "-")) {
+    fp = stdin;
+  } else {
+    fp = fopen(argv[1], "rb");
+  }
   if (!fp) {
     perror(argv[1]);
     return 1;
@@ -115,7 +120,7 @@ int main(int argc, char *argv[]) {
     SDL_Flip(screen);
     if (!Poll())
       break;
-    SDL_Delay(50);
+    // SDL_Delay(50);
   }
 
   return 0;
