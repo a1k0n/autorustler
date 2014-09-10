@@ -47,12 +47,19 @@ void RenderFrame(const uint8_t *yuvbuf, SDL_Surface *frame) {
   // construct an opencv Mat
   cv::Mat uimage(240, 320, CV_8UC1, const_cast<uint8_t*>(yuvbuf));
 
-  vector<cv::KeyPoint> points(100);
-  cv::FastFeatureDetector fastdet(5);
+  static vector<cv::KeyPoint> points(100);
+  // static cv::FastFeatureDetector fastdet(5);
+  points.clear();
 
   // put a green pixel on each keypoint
-  fastdet.detect(uimage, points);
-  for (int i = 0; i < points.size(); i++) {
+  // fastdet.detect(uimage, points);
+  // use FAST-9
+  static int threshold = 10;
+  cv::FASTX(uimage, points, 10, true, cv::FastFeatureDetector::TYPE_9_16);
+  if (points.size() > 120) threshold++;
+  else if (points.size() < 60 && threshold > 3) threshold--;
+
+  for (size_t i = 0; i < points.size(); i++) {
     int x = points[i].pt.x;
     int y = points[i].pt.y;
     pixbuf[(240 - y) * 320 - x - 1] = 0xff00ff00;
@@ -61,6 +68,7 @@ void RenderFrame(const uint8_t *yuvbuf, SDL_Surface *frame) {
     pixbuf[(239 - y) * 320 - x - 1] = 0xff00ff00;
     pixbuf[(241 - y) * 320 - x - 1] = 0xff00ff00;
   }
+  printf("threshold %d %lu keypoints\n", threshold, points.size());
 }
 
 int main(int argc, char *argv[]) {
