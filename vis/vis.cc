@@ -63,7 +63,7 @@ void RenderFrame(const uint8_t *yuvbuf, SDL_Surface *frame) {
   }
 }
 
-int SDL_main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "%s [output.yuv]\n", argv[0]);
     return 1;
@@ -79,7 +79,7 @@ int SDL_main(int argc, char *argv[]) {
 
   SDL_Surface *screen = SDL_SetVideoMode(320, 240, 32, SDL_SWSURFACE);
   if (!screen) {
-    fprintf(stderr, "sdl screen init fail");
+    fprintf(stderr, "sdl screen init fail\n");
     return 1;
   }
   SDL_WM_SetCaption("autorustler viz", NULL);
