@@ -110,8 +110,8 @@ bool Camera::Init(int width, int height, int fps) {
   }
 
   // Ensure there are enough buffers to avoid dropping frames
-  if (video_port->buffer_num < 3)
-    video_port->buffer_num = 3;
+  if (video_port->buffer_num < 20)
+    video_port->buffer_num = 20;
 
   status = mmal_component_enable(camera_);
   if (status != MMAL_SUCCESS) {

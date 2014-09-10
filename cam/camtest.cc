@@ -17,6 +17,7 @@ class Recorder: public CameraReceiver {
   bool Init(const char *fname) {
     if (!strcmp(fname, "-")) {
       output_file_ = stdout;
+      setbuf(stdout, NULL);
     } else {
       output_file_ = fopen(fname, "wb");
     }
@@ -37,7 +38,7 @@ class Recorder: public CameraReceiver {
     fwrite(&t.tv_sec, sizeof(t.tv_sec), 1, output_file_);
     fwrite(&t.tv_usec, sizeof(t.tv_usec), 1, output_file_);
     fwrite(buf, 1, length, output_file_);
-    fprintf(stderr, "%d.%06d frame %d\n", t.tv_sec, t.tv_usec, frame_++);
+    // fprintf(stderr, "%d.%06d frame %d\n", t.tv_sec, t.tv_usec, frame_++);
   }
 
  private:
@@ -49,16 +50,26 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, handle_sigint);
 
   if (argc < 2) {
-    fprintf(stderr, "%s [output.yuv]\n", argv[0]);
+    fprintf(stderr, "%s [output.yuv] [fps]\n", argv[0]);
     return 1;
   }
 
-  if (!Camera::Init(320, 240, 20))
+  int fps = 20;
+
+  if (argc > 2) {
+    fps = atoi(argv[2]);
+    if (fps == 0) {
+      fprintf(stderr, "invalid fps %d\n", fps);
+      return 1;
+    }
+  }
+
+  if (!Camera::Init(320, 240, fps))
     return 1;
 
   struct timeval t;
   gettimeofday(&t, NULL);
-  fprintf(stderr, "%d.%06d camera on\n", t.tv_sec, t.tv_usec);
+  fprintf(stderr, "%d.%06d camera on @%d fps\n", t.tv_sec, t.tv_usec, fps);
 
   Recorder r;
   if (!r.Init(argv[1]))
