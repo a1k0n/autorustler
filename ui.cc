@@ -72,7 +72,9 @@ int main() {
     imu_state s;
     RCState rcstate;
     imu_read(i2cfd, &s);
-    rc.GetRadioState(&rcstate);
+    if (!rc.GetRadioState(&rcstate)) {  // retry once
+      rc.GetRadioState(&rcstate);
+    }
     if (!stateinit) {
       minstate = s;
       maxstate = s;
@@ -110,20 +112,22 @@ int main() {
     LCD::WriteString(28, 16, buf, screen);
 
     float vbat = 0;
-    rc.GetBatteryVoltage(&vbat);
+    if (rc.GetBatteryVoltage(&vbat)) {
+      rc.GetBatteryVoltage(&vbat);  // retry once
+    }
     snprintf(buf, sizeof(buf), "%0.1fV", vbat);
     LCD::WriteString(59, 40, buf, screen);
 
     screen[3*84 + rcstate.throttle/4] = 0xff;
     screen[4*84 + rcstate.steering/4] = 0xff;
 
-    if (GET_GPIO(BUTTON_BLACK)) {
+    if (GET_GPIO(BUTTON_BLACK) == 0) {
       screen[0] = 0x1c;
       screen[1] = 0x3e;
       screen[2] = 0x3e;
       screen[3] = 0x1c;
     }
-    if (GET_GPIO(BUTTON_RED)) {
+    if (GET_GPIO(BUTTON_RED) == 0) {
       screen[5] = 0x1c;
       screen[6] = 0x3e;
       screen[7] = 0x3e;

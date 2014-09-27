@@ -11,21 +11,16 @@ bool RadioControl::Init() {
 }
 
 bool RadioControl::GetRadioState(RCState* state) {
-  uint8_t txbuf[2], rxbuf[32];
-  txbuf[0] = 0x02;  // get radio state cmd
-  txbuf[1] = 0;     // ignored
-  spi.xfer(txbuf, rxbuf, 2);
-  // rxbuf[1] is number of queued samples
-  uint8_t readlen = std::min(
-      (uint8_t)(sizeof(rxbuf)/2),
-      rxbuf[1]);
-  if (readlen == 0) {
+  // padding + get radio state cmd + 2 bytes output
+  uint8_t txbuf[5] = {0, 0, 0x02, 0, 0}, rxbuf[5];
+  if (spi.xfer(txbuf, rxbuf, 5) != 5)
     return false;
-  }
-  spi.xfer(NULL, rxbuf, readlen*2);
-  // ignore all but the most recent input
-  state->throttle = rxbuf[(readlen-1)*2];
-  state->steering = rxbuf[(readlen-1)*2 + 1];
+  state->throttle = rxbuf[3];
+  state->steering = rxbuf[4];
+  // should never be outside this range; must be a comm problem?
+  if (state->throttle < 60 || state->throttle > 170 ||
+      state->steering < 60 || state->throttle > 170)
+    return false;
   return true;
 }
 
@@ -33,10 +28,11 @@ bool RadioControl::GetBatteryVoltage(float *voltage) {
   const float kR1 = 78.85;  // FIXME: re-measure these
   const float kR2 = 10.01;
   const float kVRef = 1.1;
-  uint8_t txbuf[3] = {0x05, 0, 0}, rxbuf[3];
-  if (spi.xfer(txbuf, rxbuf, 3) != 3)
+  // padding + get battery voltage + 2 bytes output
+  uint8_t txbuf[5] = {0, 0, 0x05, 0, 0}, rxbuf[5];
+  if (spi.xfer(txbuf, rxbuf, 5) != 5)
     return false;
-  uint16_t adc = (rxbuf[2] << 8) + rxbuf[1];
+  uint16_t adc = (rxbuf[4] << 8) + rxbuf[3];
   if (adc > 1023)  // FIXME: sometimes we get junk
     return false;
   *voltage = (kR1 + kR2) * kVRef * adc / (1024.0 * kR2);

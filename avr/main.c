@@ -4,31 +4,7 @@
 #include <avr/wdt.h>
 #include <util/delay.h>
 
-#define QUEUE_SIZE 32
-
-volatile static uint8_t ch1_queue[QUEUE_SIZE], ch2_queue[QUEUE_SIZE];
-volatile static uint8_t queue_head = 0, queue_tail = 0, queue_state = 0;
 static uint16_t battery_voltage = 0;
-// if queue_state is 0, ch1_queue[head] and ch2_queue[head] are both empty
-// if it's 1, then one of ch1_queue or ch2_queue is filled and the other is
-// awaiting the PWM pulse
-
-static void enqueue(volatile uint8_t *q, uint8_t item) {
-  q[queue_head] = item;
-  if (queue_state == 0) {
-    queue_state++;
-  } else {
-    queue_head = (queue_head+1)&(QUEUE_SIZE-1);
-    if (queue_head == queue_tail) {  // queue overflow
-      queue_tail = (queue_tail+1)&(QUEUE_SIZE-1);
-    }
-    queue_state = 0;
-  }
-}
-
-static uint8_t queuelen() {
-  return (queue_head - queue_tail)&(QUEUE_SIZE-1);
-}
 
 volatile static uint8_t ch1_counts = 0, ch2_counts = 0;
 volatile static uint8_t pwm_mirror = 1;
@@ -72,11 +48,10 @@ ISR(SPI_STC_vect) {
         SPDR = TCNT1L;
         spi_hibyte = TCNT1H;
         spi_state = 1;
-      } else if (spi_in == 0x02) {  // command 0x02: read PWM input queue
-        spi_readlen = queuelen();
-        SPDR = spi_readlen;
-        if (spi_readlen)
-          spi_state = 2;
+      } else if (spi_in == 0x02) {  // command 0x02: read PWM input state
+        SPDR = ch1_counts;
+        spi_hibyte = ch2_counts;
+        spi_state = 1;
       } else if (spi_in == 0x03) {  // command 0x03: set pwm mirroring
         SPDR = 1 + (pwm_mirror << 1);
         spi_state = 5;
@@ -87,23 +62,13 @@ ISR(SPI_STC_vect) {
         SPDR = battery_voltage & 0xff;
         spi_hibyte = battery_voltage >> 8;
         spi_state = 1;
-      } else {
+      } else {  // unknown command, or padding (command 0)
         SPDR = 0;
       }
       break;
     case 1: // send one high byte, then return to state 0
       SPDR = spi_hibyte;
       spi_state = 0;
-      break;
-    case 2: // read count queue, ch1
-      SPDR = ch1_queue[queue_tail];
-      spi_state++;
-      break;
-    case 3: // read counts, ch2 lo
-      SPDR = ch2_queue[queue_tail];
-      queue_tail = (queue_tail+1) & (QUEUE_SIZE-1);
-      spi_readlen--;
-      spi_state = spi_readlen ? 2 : 0;
       break;
     case 5: // set PWM mirror
       pwm_mirror = spi_in;
@@ -181,19 +146,9 @@ int main() {
       ADCSRA |= _BV(ADIF);
       battery_voltage = ADC;
     }
-    if (ch1_counts) {
-      if (pwm_mirror) {
-        OCR0A = ch1_counts;
-      }
-      enqueue(ch1_queue, ch1_counts);
-      ch1_counts = 0;
-    }
-    if (ch2_counts) {
-      if (pwm_mirror) {
-        OCR0B = ch2_counts;
-      }
-      enqueue(ch2_queue, ch2_counts);
-      ch2_counts = 0;
+    if (pwm_mirror) {
+      OCR0A = ch1_counts;
+      OCR0B = ch2_counts;
     }
   }
 }

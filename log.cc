@@ -37,8 +37,12 @@ int main() {
     timeval tv0;
     gettimeofday(&tv0, NULL);
     imu_read(i2cfd, &s);
-    rc.GetRadioState(&rcstate);
-    rc.GetBatteryVoltage(&vbat);
+    if (!rc.GetRadioState(&rcstate)) {
+      printf("retrying radio\n");
+      rc.GetRadioState(&rcstate);
+    }
+    if (!rc.GetBatteryVoltage(&vbat))
+      rc.GetBatteryVoltage(&vbat);
 #if 0
     fprintf(stderr, "gyro [%+4d %+4d %+4d] mag [%+4d %+4d %+4d] "
             "acc [%+4d %+4d %+4d]\e[K\r",
