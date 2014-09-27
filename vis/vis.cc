@@ -3,11 +3,13 @@
 #include <vector>
 
 #include "SDL/SDL.h"
+#include "SDL/SDL_ttf.h"
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/core/core.hpp"
 #include "opencv2/core/core_c.h"
 #include "opencv2/imgproc/imgproc_c.h"
-
+#include "fast/fast.h"
+#include "vikit/vision.h"
 
 using std::min;
 using std::max;
@@ -129,8 +131,15 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     }
   }
 
+  const int n_pyr_levels = 3;
+  cv::Mat img_pyr[n_pyr_levels];
+  img_pyr[0] = cv::Mat(240, 320, CV_8U, const_cast<uint8_t*>(yuvbuf));
+  for (int i = 1; i < n_pyr_levels; i++) {
+    img_pyr[i] = cv::Mat(img_pyr[i-1].rows / 2, img_pyr[i-1].cols / 2, CV_8U);
+    vk::halfSample(img_pyr[i-1], img_pyr[i]);
+  }
 
-  cv::Mat uimage(240, 320, CV_8UC1, const_cast<uint8_t*>(yuvbuf));
+#if 0
   // construct an opencv Mat
   static vector<cv::KeyPoint> points(100);
   // static cv::FastFeatureDetector fastdet(5);
@@ -139,23 +148,73 @@ void RenderFrame(uint32_t sec, uint32_t usec,
   // put a green pixel on each keypoint
   // fastdet.detect(uimage, points);
   // use FAST-9
-  static int threshold = 10;
+  static int threshold = 20;
   cv::FASTX(uimage, points, threshold, true,
             cv::FastFeatureDetector::TYPE_9_16);
-  if (points.size() > 240) threshold++;
-  else if (points.size() < 120 && threshold > 3) threshold--;
-
+  // if (points.size() > 240) threshold++;
+  // else if (points.size() < 120 && threshold > 3) threshold--;
   for (size_t i = 0; i < points.size(); i++) {
     int x = points[i].pt.x*2;
     int y = points[i].pt.y*2;
+  }
+#endif
+
+  static struct {
+    float x, y, score;
+    bool has_corner;
+  } corners[120];
+  memset(corners, 0, sizeof(corners));
+
+  for (int L = 0; L < n_pyr_levels; L++) {
+    const int scale = 1<<L;
+    const int threshold = 15;
+    vector<fast::fast_xy> fast_corners;
+#if __SSE2__
+    fast::fast_corner_detect_10_sse2(
+        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
+        img_pyr[L].rows, img_pyr[L].cols, threshold, fast_corners);
+#else
+    fast::fast_corner_detect_10(
+        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
+        img_pyr[L].rows, img_pyr[L].cols, threshold, fast_corners);
+#endif
+
+    vector<int> scores, nm_corners;
+    fast::fast_corner_score_10(
+        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
+        fast_corners, threshold, scores);
+    fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
+
+    for (int i = 0; i < nm_corners.size(); i++) {
+      float x = fast_corners[nm_corners[i]].x;
+      float y = fast_corners[nm_corners[i]].y;
+      // break into 32x20 grid cells, making a 10x12 grid
+      int k = ((int)(y * scale) / 20) * 10 + ((int)(x * scale) / 32);
+      const float score = vk::shiTomasiScore(img_pyr[L], x, y);
+      if (!corners[k].has_corner || score > corners[k].score) {
+        corners[k].x = x * scale;
+        corners[k].y = y * scale;
+        corners[k].score = score;
+        corners[k].has_corner = true;
+      }
+    }
+  }
+
+  int nkps = 0;
+  for (size_t i = 0; i < 120; i++) {
+    if (!corners[i].has_corner)
+      continue;
+    nkps++;
+    int x = corners[i].x * 2;
+    int y = corners[i].y * 2;
     pixbuf[(480 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(480 - y) * 640 - x - 2] = 0xff00ff00;
     pixbuf[(480 - y) * 640 - x] = 0xff00ff00;
     pixbuf[(479 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(481 - y) * 640 - x - 1] = 0xff00ff00;
   }
-  printf("[%d.%06d] threshold %d %lu keypoints\n", sec, usec,
-         threshold, points.size());
+  printf("[%d.%06d] threshold %d %d keypoints\n", sec, usec,
+         20, nkps);
 }
 
 int main(int argc, char *argv[]) {
@@ -188,8 +247,6 @@ int main(int argc, char *argv[]) {
   SDL_Surface *frame = SDL_CreateRGBSurface(
       SDL_SWSURFACE, 640, 480, 32,
       0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
-
-  SDL_Rect rect320240 = {0, 0, 320, 240};
 
   int frameno = 0;
   for (;;) {
