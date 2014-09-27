@@ -14,6 +14,13 @@ extern volatile unsigned *gpio;
 #define GPIO_SET *(gpio+7)   // sets bits which are 1
 #define GPIO_CLR *(gpio+10)  // clears bits which are 1
 
+#define GPIO_IN0   *(gpio+13)  // Reads GPIO input bits 0-31
+
+#define GPIO_PULL   *(gpio+37)    // Pull up/pull down
+#define GPIO_PULLCLK0 *(gpio+38)  // Pull up/pull down clock
+
+#define GET_GPIO(g) (*(gpio+13) & (1 << g))  // 0 if LOW, (1<<g) if HIGH
+
 bool gpio_init();  // N.B. must be root
 
 #endif  // LCD_GPIO_H_

@@ -17,11 +17,25 @@ volatile bool done = false;
 
 void handle_sigint(int signo) { done = true; }
 
+const int BUTTON_RED = 24;     // GPIO24 -> red button
+const int BUTTON_BLACK = 23;   // GPIO23 -> black button
+
 int main() {
   if (!gpio_init()) {
     fprintf(stderr, "gpio init fail\n");
     return 1;
   }
+
+  INP_GPIO(BUTTON_RED);
+  INP_GPIO(BUTTON_BLACK);
+  GPIO_PULL = 2;
+  usleep(10);
+  // clock on GPIO 23 & 24 (bit 23 & 24 set)
+  GPIO_PULLCLK0 = (1 << BUTTON_RED) | (1 << BUTTON_BLACK);
+  usleep(10);
+  GPIO_PULL = 0;
+  GPIO_PULLCLK0 = 0;
+
 
   LCD lcd;
   if (!lcd.Init()) {
@@ -103,9 +117,22 @@ int main() {
     screen[3*84 + rcstate.throttle/4] = 0xff;
     screen[4*84 + rcstate.steering/4] = 0xff;
 
+    if (GET_GPIO(BUTTON_BLACK)) {
+      screen[0] = 0x1c;
+      screen[1] = 0x3e;
+      screen[2] = 0x3e;
+      screen[3] = 0x1c;
+    }
+    if (GET_GPIO(BUTTON_RED)) {
+      screen[5] = 0x1c;
+      screen[6] = 0x3e;
+      screen[7] = 0x3e;
+      screen[8] = 0x1c;
+    }
+
     lcd.GotoXY(0, 0);
     lcd.Draw(screen, 84*6);
-    usleep(20000);
+    usleep(100000);
   }
 
   memset(screen, 0, sizeof(screen));
