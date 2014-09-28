@@ -3,13 +3,13 @@
 
 #include <stdint.h>
 
-struct imu_state {
+struct IMUState {
   int16_t gyro_x, gyro_y, gyro_z;
   int16_t mag_x, mag_y, mag_z;
   int16_t accel_x, accel_y, accel_z;
 };
 
 int imu_init(int i2cfd);
-int imu_read(int i2cfd, imu_state *state);
+int imu_read(int i2cfd, IMUState *state);
 
 #endif  // IMU_IMU_H_

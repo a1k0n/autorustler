@@ -4,9 +4,6 @@ add_subdirectory(userland)
 
 project(Autorustler)
 
-add_executable(ui ui.cc)
-target_link_libraries(ui car lcd imu gpio)
-
 add_executable(log log.cc)
 target_link_libraries(log car imu gpio)
 
@@ -22,3 +19,4 @@ add_subdirectory(gpio)
 add_subdirectory(gps)
 add_subdirectory(imu)
 add_subdirectory(lcd)
+add_subdirectory(ui)

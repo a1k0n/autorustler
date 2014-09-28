@@ -26,7 +26,7 @@ int main() {
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    imu_state s;
+    IMUState s;
     imu_read(i2cfd, &s);
 #if 0
     fprintf(stderr, "gyro [%+4d %+4d %+4d] mag [%+4d %+4d %+4d] "

@@ -32,7 +32,7 @@ int main() {
   }
 
   float vbat;
-  imu_state s;
+  IMUState s;
   RCState rcstate;
   while (!done) {
     timeval tv0;

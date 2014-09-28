@@ -38,7 +38,7 @@ int imu_init(int i2cfd) {
   return 0;
 }
 
-int imu_read(int i2cfd, imu_state *s) {
+int imu_read(int i2cfd, IMUState *s) {
   uint8_t axis_buf[6];
   i2c_read(i2cfd, ADDR_ITG3200, 0x1d, axis_buf, 6);
   s->gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // roll
