@@ -146,7 +146,7 @@ int main() {
       ADCSRA |= _BV(ADIF);
       battery_voltage = ADC;
     }
-    if (pwm_mirror) {
+    if (pwm_mirror && ch1_counts != 0 && ch2_counts != 0) {
       OCR0A = ch1_counts;
       OCR0B = ch2_counts;
     }
