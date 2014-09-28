@@ -12,6 +12,7 @@ struct UIState {
   IMUState imu_state;
   RCState rc_state;
   float vbat;
+  int gps_SVs;
 };
 
 extern volatile UIState uistate;

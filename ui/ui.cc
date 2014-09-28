@@ -65,6 +65,8 @@ const uint8_t dither_matrix[8][8] = {
 
 
 int main() {
+  memset(const_cast<UIState*>(&uistate), 0, sizeof(uistate));
+
   if (!gpio_init()) {
     fprintf(stderr, "gpio init fail\n");
     return 1;
@@ -133,23 +135,77 @@ int main() {
       }
     }
 
-    snprintf(buf, sizeof(buf), "%0.1fV", uistate.vbat);
-    LCD::WriteString(59, 40, buf, screen);
-
-    screen[3*84 + uistate.rc_state.throttle/4] = 0xff;
-    screen[4*84 + uistate.rc_state.steering/4] = 0xff;
-
-    if (GET_GPIO(BUTTON_BLACK) == 0) {
-      screen[0] = 0x1c;
-      screen[1] = 0x3e;
-      screen[2] = 0x3e;
-      screen[3] = 0x1c;
+    {
+      // bottom right: battery voltage
+      snprintf(buf, sizeof(buf), "%0.2fV", uistate.vbat);
+      LCD::WriteString(53, 40, buf, screen);
     }
-    if (GET_GPIO(BUTTON_RED) == 0) {
-      screen[5] = 0x1c;
-      screen[6] = 0x3e;
-      screen[7] = 0x3e;
-      screen[8] = 0x1c;
+
+    {
+      // first line: button / recording state
+      if (GET_GPIO(BUTTON_BLACK) == 0) {
+        screen[65] = 0x1c;
+        screen[66] = 0x3e;
+        screen[67] = 0x3e;
+        screen[68] = 0x3e;
+        screen[69] = 0x1c;
+      }
+      if (GET_GPIO(BUTTON_RED) == 0) {
+        screen[71] = 0x1c;
+        screen[72] = 0x3e;
+        screen[73] = 0x3e;
+        screen[74] = 0x3e;
+        screen[75] = 0x1c;
+      }
+    }
+
+    {
+      // 2nd line: throttle and steering
+      int thr = std::max(0, (uistate.rc_state.throttle - 70)/5);
+      int str = std::max(0, (uistate.rc_state.steering - 70)/5);
+      if (thr > 10) {
+        for (int i = 10; i <= thr; i++)
+          screen[84 + 64 + i] |= 0x03;
+      } else {
+        for (int i = 10; i >= thr; i--)
+          screen[84 + 64 + i] |= 0x03;
+      }
+      screen[84 + 83 - str] |= 0x0c;
+      screen[84 + 82 - str] |= 0x0c;
+    }
+
+    {
+      // rest of 2nd line and 1/2 of 3rd line: gyro axes
+      int gx = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_x / 200));
+      int gy = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_y / 200));
+      int gz = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_z / 200));
+      screen[84 + 63 + gx] |= 0xc0;
+      screen[84 + 64 + gx] |= 0xc0;
+      screen[2*84 + 63 + gy] |= 0x03;
+      screen[2*84 + 64 + gy] |= 0x03;
+      screen[2*84 + 63 + gz] |= 0x0c;
+      screen[2*84 + 64 + gz] |= 0x0c;
+    }
+
+    {
+      // 4th line: circle indicators for compass and acceleration
+      // TODO
+    }
+
+    {
+      // 6th line: gps + compass (arrow indicating home direction / north?)
+      // HDOP / SVs?
+      // GPS icon at upper right?
+      // yeah!
+
+      // SVs: 5..6 = 1 bar, 7 2 bar, 9+ 3 bars?
+      //     x
+      //   x x
+      // x x x
+      // x x x
+      if (uistate.gps_SVs >= 5) screen[79] |= 0x0c;
+      if (uistate.gps_SVs >= 7) screen[81] |= 0x0e;
+      if (uistate.gps_SVs >= 9) screen[83] |= 0x0f;
     }
 
     lcd.GotoXY(0, 0);

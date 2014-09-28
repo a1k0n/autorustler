@@ -42,6 +42,7 @@ void GPSUpdate(const sirf_navdata& data) {
          data.x, data.y, data.z,
          data.v8x/8.0f, data.v8y/8.0f, data.v8z/8.0f,
          data.hdop/5.0f, data.svs);
+  uistate.gps_SVs = data.svs;
 }
 
 void* GPSThread(void* data) {
