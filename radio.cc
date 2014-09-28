@@ -15,12 +15,12 @@ bool RadioControl::GetRadioState(RCState* state) {
   uint8_t txbuf[5] = {0, 0, 0x02, 0, 0}, rxbuf[5];
   if (spi.xfer(txbuf, rxbuf, 5) != 5)
     return false;
+  // should never be outside this range; must be a comm problem?
+  if (rxbuf[3] < 60 || rxbuf[3] > 170 ||
+      rxbuf[4] < 60 || rxbuf[4] > 170)
+    return false;
   state->throttle = rxbuf[3];
   state->steering = rxbuf[4];
-  // should never be outside this range; must be a comm problem?
-  if (state->throttle < 60 || state->throttle > 170 ||
-      state->steering < 60 || state->throttle > 170)
-    return false;
   return true;
 }
 
