@@ -1,7 +1,7 @@
 #ifndef LCD_LCD_H_
 #define LCD_LCD_H_
 
-#include "./spi.h"
+#include "gpio/spi.h"
 
 class LCD {
  public:

@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <algorithm>
 
-#include "lcd/spi.h"
-#include "./radio.h"
+#include "gpio/spi.h"
+#include "car/radio.h"
 
 bool RadioControl::Init() {
   if (!spi.open("/dev/spidev0.0"))

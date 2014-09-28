@@ -6,7 +6,7 @@
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
 
-#include "lcd/spi.h"
+#include "gpio/spi.h"
 
 bool SPIDev::open(const char *devname) {
   fd = ::open(devname, O_RDWR);

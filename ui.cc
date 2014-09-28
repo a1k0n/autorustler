@@ -8,10 +8,10 @@
 #include <unistd.h>
 #include <algorithm>
 
+#include "car/radio.h"
+#include "gpio/gpio.h"
 #include "imu/imu.h"
-#include "lcd/gpio.h"
 #include "lcd/lcd.h"
-#include "./radio.h"
 
 volatile bool done = false;
 

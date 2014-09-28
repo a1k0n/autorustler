@@ -5,8 +5,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include "car/radio.h"
 #include "imu/imu.h"
-#include "./radio.h"
 
 volatile bool done = false;
 

@@ -1,7 +1,7 @@
 #ifndef RADIO_H_
 #define RADIO_H_
 
-#include "lcd/spi.h"
+#include "gpio/spi.h"
 
 struct RCState {
   uint8_t throttle, steering;

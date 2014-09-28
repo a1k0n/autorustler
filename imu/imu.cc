@@ -1,5 +1,5 @@
 #include <byteswap.h>
-#include "imu/i2c.h"
+#include "gpio/i2c.h"
 #include "imu/imu.h"
 
 const uint8_t ADDR_ITG3200  = 0x68;

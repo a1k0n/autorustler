@@ -1,8 +1,9 @@
+#include "lcd/lcd.h"
+
 #include <stdint.h>
 #include <unistd.h>
-#include "./gpio.h"
-#include "./lcd.h"
-#include "./spi.h"
+#include "gpio/gpio.h"
+#include "gpio/spi.h"
 
 const int LCD_RST_GPIO = 27;
 const int LCD_DC_GPIO = 17;
