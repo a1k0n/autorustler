@@ -26,23 +26,33 @@ void* IMUThread(void* data) {
   }
 
 
-  IMUState imu;
+  IMUState s;
   RCState rcstate;
   float vbat;
 
   while (!uistate.done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    imu_read(i2cfd, &imu);
+    imu_read(i2cfd, &s);
     if (!rc.GetRadioState(&rcstate)) {
       rc.GetRadioState(&rcstate);
     }
     if (!rc.GetBatteryVoltage(&vbat))
       rc.GetBatteryVoltage(&vbat);
 
-    memcpy(const_cast<IMUState*>(&uistate.imu_state), &imu, sizeof(imu));
+    memcpy(const_cast<IMUState*>(&uistate.imu_state), &s, sizeof(s));
     memcpy(const_cast<RCState*>(&uistate.rc_state), &rcstate, sizeof(rcstate));
     uistate.vbat = vbat;
+
+    // TODO: if(recording) ... add message
+#if 0
+    printf("%d.%06d %4d %4d %4d %4d %4d %4d %4d %4d %4d %4d %4d %0.3f\n",
+           tv0.tv_sec, tv0.tv_usec,
+           s.gyro_x, s.gyro_y, s.gyro_z,
+           s.mag_x, s.mag_y, s.mag_z,
+           s.accel_x, s.accel_y, s.accel_z,
+           rcstate.steering, rcstate.throttle, vbat);
+#endif
 
     timeval tv;
     gettimeofday(&tv, NULL);

@@ -39,12 +39,30 @@ void InitButtons() {
   GPIO_PULLCLK0 = 0;
 }
 
-const uint8_t dither_matrix[4][4] = {
-  { 1*15,  9*15,  3*15, 11*15},
-  {13*15,  5*15, 15*15,  7*15},
-  { 4*15, 12*15,  2*15, 10*15},
-  {16*15,  8*15, 14*15,  6*15}
+#if 1
+const uint8_t dither_matrix[8][8] = {
+  {  4, 192,  51, 239,  16, 204,  63, 251},
+  {129,  67, 177, 114, 141,  78, 188, 126},
+  { 35, 224,  20, 208,  47, 235,  31, 220},
+  {161,  98, 145,  82, 173, 110, 157,  94},
+  { 12, 200,  59, 247,   8, 196,  55, 243},
+  {137,  75, 184, 122, 133,  71, 180, 118},
+  { 43, 231,  27, 216,  39, 228,  24, 212},
+  {169, 106, 153,  90, 165, 102, 149,  86}
 };
+#else  // gamma-corrected? this is way too dark
+const uint8_t dither_matrix[8][8] = {
+  { 38, 224, 123, 248,  72, 230, 135, 253},
+  {187, 139, 216, 177, 195, 149, 222, 185},
+  {104, 240,  79, 232, 118, 246,  98, 238},
+  {207, 165, 197, 153, 214, 174, 205, 162},
+  { 63, 228, 131, 251,  52, 226, 127, 250},
+  {192, 146, 220, 182, 190, 142, 218, 179},
+  {114, 244,  93, 236, 109, 242,  86, 234},
+  {211, 171, 202, 159, 209, 168, 200, 156}
+};
+#endif
+
 
 int main() {
   if (!gpio_init()) {
@@ -92,19 +110,25 @@ int main() {
   uint8_t screen[84*6];
 
   char buf[84];
+  int frameno = 0;
   while (!uistate.done) {
     memset(screen, 0, sizeof(screen));
 
+    frameno++;
+    int dither_xor = (frameno&1) << 1;
     // draw camera frame
-    for (int y = 0, idxin = 0; y < 48; y += 8) {
+    for (int y = 0; y < 48; y += 8) {
       int idxout = (y>>3)*84;
+      int idxin = y*64;
       for (int x = 0; x < 64; x++) {
         uint8_t pxl = 0;
         for (int i = 0; i < 8; i++) {
-          if (uistate.cam_preview[idxin++] < dither_matrix[i&3][x&3]) {
+          if (uistate.cam_preview[idxin + 64*i] <=
+              dither_matrix[i ^ dither_xor][x&7]) {
             pxl |= (1 << i);
           }
         }
+        idxin++;
         screen[idxout++] = pxl;
       }
     }
@@ -130,7 +154,7 @@ int main() {
 
     lcd.GotoXY(0, 0);
     lcd.Draw(screen, 84*6);
-    usleep(100000);
+    usleep(50000);
   }
 
   memset(screen, 0, sizeof(screen));

@@ -10,11 +10,14 @@ class UICamReceiver: public CameraReceiver {
   void OnFrame(uint8_t *buf, size_t length) {
     struct timeval t;
     gettimeofday(&t, NULL);
+
+    // TODO: if(recording) ... add message
+
+    int idxout = 64*48;
     for (int y = 0; y < 240; y += 5) {
-      int idxout = 64*(y/5);
-      int idxin = y*240;
+      int idxin = y*320;
       for (int x = 0; x < 320; x += 5) {
-        uistate.cam_preview[idxout++] = buf[idxin];
+        uistate.cam_preview[--idxout] = buf[idxin];
         idxin += 5;
       }
     }

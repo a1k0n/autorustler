@@ -9,7 +9,7 @@ vec3<int32_t> refpos;
 bool have_refpos = false;
 
 void GPSUpdate(const sirf_navdata& data) {
-  // FIXME: log this to logger and update ui state
+  // TODO: if (recording) ... log gps state
   struct timeval tv;
   gettimeofday(&tv, NULL);
   if (!have_refpos) {
