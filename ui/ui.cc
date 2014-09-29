@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <math.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -113,6 +114,9 @@ int main() {
 
   char buf[84];
   int frameno = 0;
+  const uint8_t dotted_circle[9] = {
+    0x3c, 0x42, 0x81, 0x81, 0x81, 0x81, 0x81, 0x42, 0x3c};
+
   while (!uistate.done) {
     memset(screen, 0, sizeof(screen));
 
@@ -188,8 +192,23 @@ int main() {
     }
 
     {
-      // 4th line: circle indicators for compass and acceleration
-      // TODO
+      for (int i = 0; i < 9; i++) {
+        screen[3*84 + 64 + i] |= dotted_circle[i];
+        screen[3*84 + 74 + i] |= dotted_circle[i];
+      }
+      // 3rd line: circle indicators for compass and acceleration
+      // TODO: compass offset + tilt compensation
+      int cx = std::min(8, std::max(0, (80 + uistate.imu_state.mag_x +
+                                        1000) / 20));
+      int cy = std::min(7, std::max(0, (70 - uistate.imu_state.mag_z +
+                                        1000) / 20));
+      screen[3*84 + 63 + cx] |= (3 << cy);
+      screen[3*84 + 64 + cx] |= (3 << cy);
+
+      int ax = std::min(8, std::max(0, (80 + uistate.imu_state.accel_x) / 20));
+      int ay = std::min(7, std::max(0, (70 - uistate.imu_state.accel_y) / 20));
+      screen[3*84 + 73 + ax] |= (3 << ay);
+      screen[3*84 + 74 + ax] |= (3 << ay);
     }
 
     {
@@ -199,13 +218,21 @@ int main() {
       // yeah!
 
       // SVs: 5..6 = 1 bar, 7 2 bar, 9+ 3 bars?
-      //     x
-      //   x x
-      // x x x
-      // x x x
-      if (uistate.gps_SVs >= 5) screen[79] |= 0x0c;
-      if (uistate.gps_SVs >= 7) screen[81] |= 0x0e;
-      if (uistate.gps_SVs >= 9) screen[83] |= 0x0f;
+      //     x      xx
+      //   x x     x x
+      // x x x    x  x
+      // x x x   xxxxx
+      if (uistate.gps_SVs < 5) {
+        screen[79] = 0x08;
+        screen[80] = 0x0c;
+        screen[81] = 0x0a;
+        screen[82] = 0x09;
+        screen[83] = 0x0f;
+      } else {
+        if (uistate.gps_SVs >= 5) screen[79] |= 0x0c;
+        if (uistate.gps_SVs >= 7) screen[81] |= 0x0e;
+        if (uistate.gps_SVs >= 9) screen[83] |= 0x0f;
+      }
     }
 
     lcd.GotoXY(0, 0);
