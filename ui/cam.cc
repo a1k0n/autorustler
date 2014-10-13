@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
 
 #include "cam/cam.h"
 #include "ui/uistate.h"
@@ -8,10 +7,14 @@
 class UICamReceiver: public CameraReceiver {
  public:
   void OnFrame(uint8_t *buf, size_t length) {
-    struct timeval t;
-    gettimeofday(&t, NULL);
-
-    // TODO: if(recording) ... add message
+    if (uistate.is_recording) {
+      RecordHeader rh;
+      rh.Init(length, 1);
+      recording.StartWriting();
+      recording.Write(reinterpret_cast<uint8_t*>(&rh), RecordHeader::size);
+      recording.Write(buf, length);
+      recording.StopWriting();
+    }
 
     int idxout = 64*48;
     for (int y = 0; y < 240; y += 5) {

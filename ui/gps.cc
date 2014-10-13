@@ -10,8 +10,6 @@ bool have_refpos = false;
 
 void GPSUpdate(const sirf_navdata& data) {
   // TODO: if (recording) ... log gps state
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
   if (!have_refpos) {
     refpos = vec3<int32_t>(data.x, data.y, data.z);
     have_refpos = true;
@@ -23,6 +21,8 @@ void GPSUpdate(const sirf_navdata& data) {
     uistate.gps_y = pos.y;
     uistate.gps_z = pos.z;
 #if 0
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
     printf("%d.%06d %d %d %d %d %d %0.2f %0.2f %0.2f %0.1f %d\n",
            tv.tv_sec, tv.tv_usec,
            data.gps_week, data.gps_tow,
@@ -31,6 +31,7 @@ void GPSUpdate(const sirf_navdata& data) {
            data.hdop/5.0f, data.svs);
 #endif
   }
+#if 0
   int tow = data.gps_tow - 1600;  // adjust for leap seconds to get UTC
   int jif = tow % 100; tow /= 100;
   int sec = tow % 60; tow /= 60;
@@ -42,7 +43,15 @@ void GPSUpdate(const sirf_navdata& data) {
          data.x, data.y, data.z,
          data.v8x/8.0f, data.v8y/8.0f, data.v8z/8.0f,
          data.hdop/5.0f, data.svs);
+#endif
   uistate.gps_SVs = data.svs;
+
+  RecordHeader rh;
+  rh.Init(sizeof(data), 3);
+  recording.StartWriting();
+  recording.Write(reinterpret_cast<const uint8_t*>(&rh), sizeof(rh));
+  recording.Write(reinterpret_cast<const uint8_t*>(&data), sizeof(data));
+  recording.StopWriting();
 }
 
 void* GPSThread(void* data) {

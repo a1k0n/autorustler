@@ -3,9 +3,11 @@
 
 #include "imu/imu.h"
 #include "car/radio.h"
+#include "ui/recording.h"
 
 struct UIState {
   bool done;
+  bool is_recording;
 
   uint8_t cam_preview[64*48];
   int32_t gps_x, gps_y, gps_z;
@@ -16,5 +18,6 @@ struct UIState {
 };
 
 extern volatile UIState uistate;
+extern Recording recording;
 
 #endif  // UI_UISTATE_H_

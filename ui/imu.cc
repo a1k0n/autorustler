@@ -44,7 +44,16 @@ void* IMUThread(void* data) {
     memcpy(const_cast<RCState*>(&uistate.rc_state), &rcstate, sizeof(rcstate));
     uistate.vbat = vbat;
 
-    // TODO: if(recording) ... add message
+    if (uistate.is_recording) {
+      RecordHeader rh;
+      rh.Init(sizeof(s) + sizeof(rcstate) + sizeof(vbat), 2);
+      recording.StartWriting();
+      recording.Write(reinterpret_cast<uint8_t*>(&rh), sizeof(rh));
+      recording.Write(reinterpret_cast<uint8_t*>(&s), sizeof(s));
+      recording.Write(reinterpret_cast<uint8_t*>(&rcstate), sizeof(rcstate));
+      recording.Write(reinterpret_cast<uint8_t*>(&vbat), sizeof(vbat));
+      recording.StopWriting();
+    }
 #if 0
     printf("%d.%06d %4d %4d %4d %4d %4d %4d %4d %4d %4d %4d %4d %0.3f\n",
            tv0.tv_sec, tv0.tv_usec,

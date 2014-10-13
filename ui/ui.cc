@@ -15,9 +15,11 @@
 #include "gps/sirf.h"
 #include "imu/imu.h"
 #include "lcd/lcd.h"
+#include "ui/recording.h"
 #include "ui/uistate.h"
 
 volatile UIState uistate;
+Recording recording;
 
 void handle_sigint(int signo) { uistate.done = true; }
 
@@ -64,6 +66,14 @@ const uint8_t dither_matrix[8][8] = {
 };
 #endif
 
+void ToggleRecording() {
+  if (uistate.is_recording) {
+    uistate.is_recording = false;
+    recording.StopRecording();
+  } else {
+    uistate.is_recording = recording.StartRecording();
+  }
+}
 
 int main() {
   memset(const_cast<UIState*>(&uistate), 0, sizeof(uistate));
@@ -146,14 +156,47 @@ int main() {
     }
 
     {
+      static int recordbutton_state = 0;
       // first line: button / recording state
+
+      // debounce black button, toggle on button up
       if (GET_GPIO(BUTTON_BLACK) == 0) {
-        screen[65] = 0x1c;
-        screen[66] = 0x3e;
-        screen[67] = 0x3e;
-        screen[68] = 0x3e;
-        screen[69] = 0x1c;
+        recordbutton_state = 3;
+      } else {
+        if (recordbutton_state > 1) {
+          recordbutton_state--;
+        } else if (recordbutton_state == 1) {
+          ToggleRecording();
+          recordbutton_state--;
+        }
       }
+
+      if (uistate.is_recording) {
+        // blinking "recording" light in upper-right
+        screen[74] = 0x1c;
+
+        if (frameno & 8) {
+          screen[75] = 0x3e;
+        } else {
+          screen[75] = 0x22;
+        }
+        screen[76] = screen[75];
+        screen[77] = screen[75];
+        screen[78] = 0x1c;
+
+        int rt = recording.GetRecordTime();
+        int min = rt / 60000;
+        rt %= 60000;
+        int sec = rt / 1000;
+        rt %= 1000;
+        snprintf(buf, sizeof(buf), "[%02d:%02d.%d]",
+                 min, sec, rt/100);
+        LCD::WriteString(0, 32, buf, screen);
+        snprintf(buf, sizeof(buf), "%dk/s", recording.GetWriteSpeed());
+        LCD::WriteString(0, 40, buf, screen);
+      }
+
+      // red button pressed indicator
       if (GET_GPIO(BUTTON_RED) == 0) {
         screen[71] = 0x1c;
         screen[72] = 0x3e;
