@@ -11,7 +11,7 @@ class UICamReceiver: public CameraReceiver {
       RecordHeader rh;
       rh.Init(length, 1);
       recording.StartWriting();
-      recording.Write(reinterpret_cast<uint8_t*>(&rh), RecordHeader::size);
+      recording.Write(reinterpret_cast<uint8_t*>(&rh), sizeof(rh));
       recording.Write(buf, length);
       recording.StopWriting();
     }

@@ -11,11 +11,9 @@ struct iovec;
 struct RecordHeader {
   uint32_t ts_sec, ts_usec;
   uint32_t len;
-  uint8_t recordtype;
+  uint32_t recordtype;
 
-  static const size_t size = 13;
-
-  void Init(uint32_t l, uint8_t typ) {
+  void Init(uint32_t l, uint32_t typ) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     ts_sec = tv.tv_sec;
