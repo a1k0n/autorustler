@@ -52,11 +52,16 @@ int main() {
     gettimeofday(&tv0, NULL);
     imu_read(i2cfd, &s);
 
-    // angular velocity
-    Vector3f w(s.gyro_x, s.gyro_z, s.gyro_y);
-    w -= gyromean;
+    // angular velocity in car coords
+    // car: x right, y up, z forward
+    // gyro: x -roll (-z), y pitch(x), z yaw (y)
+    Vector3f w(s.gyro_y, s.gyro_z, -s.gyro_x);
+    // mag: x back (-z), y up(y), z right
+    Vector3f x(s.mag_z, s.mag_y, -s.mag_x);
+    // accel: x front (z), y left (-x), z down (-y)
+    Vector3f g(-s.accel_y, -s.accel_z, s.accel_x);
 
-    Vector3f x(s.mag_x, s.mag_y, s.mag_z);
+    // w -= gyromean;
     Vector3f y = (x - lastx) + w.cross(x);
     Matrix3f Wi = SO3(w);
     num += Wi * y;
@@ -67,10 +72,15 @@ int main() {
     lastx = x;
 
     x -= bhat;
-    printf("b:[%f %f %f] w:[%5.0f %5.0f %5.0f] x:[%4.1f %4.1f %4.1f]\n",
+    // project magnetometer vector onto ground, as determined by the
+    // accelerometer
+    Vector3f proj = x - g * (x.dot(g) / (x.norm() * g.norm()));
+    float angle = atan2(proj[2], proj[0]);
+    printf("b:[%f %f %f] w:[%5.0f %5.0f %5.0f] x:[%4.1f %4.1f %4.1f] %0.0f\n",
            bhat[0], bhat[1], bhat[2],
            w[0], w[1], w[2],
-           x[0], x[1], x[2]);
+           x[0], x[1], x[2],
+           180.0 * angle / M_PI);
 
     timeval tv;
     gettimeofday(&tv, NULL);

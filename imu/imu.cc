@@ -46,22 +46,11 @@ int imu_read(int i2cfd, IMUState *s) {
   s->gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // yaw
 
   i2c_read(i2cfd, ADDR_HMC5883L, 0x03, axis_buf, 6);
-  // facing south-ish: +270, -430, -67
-  // facing north-ish: +420, -230, +60
-  // facing east-ish: +300, -300, +53
-  // facing west-ish: +500, -36, +60
-  // facing up, top towards north: -288, +410, -50
-  // facing up, top towards east: -300, +300, -130
-  // up, towards west: -280, +275, +110
-  // on right side, top toward west: 130, 300, -630
-  // this is confounded by a metal bench, not sure what's going on
   s->mag_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // front?
   s->mag_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // up
   s->mag_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // side?
 
   i2c_read(i2cfd, ADDR_ADXL345, 0x32, axis_buf, 6);
-  // note: not totally calibrated across the three axes; very small offset
-  // error but the z axis seems to have its scale off a bit -- -270 to +245
   s->accel_x = (*reinterpret_cast<uint16_t*>(axis_buf+0));  // toward back
   s->accel_y = (*reinterpret_cast<uint16_t*>(axis_buf+2));  // toward right
   s->accel_z = (*reinterpret_cast<uint16_t*>(axis_buf+4));  // toward ground
