@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 2.8)
+find_package(PkgConfig)
 
 add_subdirectory(userland)
 
 project(Autorustler)
+
+pkg_check_modules(EIGEN REQUIRED eigen3)
 
 add_executable(log log.cc)
 target_link_libraries(log car imu gpio)
@@ -11,6 +14,7 @@ add_executable(cal cal.cc)
 target_link_libraries(cal imu gpio)
 
 include_directories(${PROJECT_SOURCE_DIR})
+include_directories(${EIGEN_INCLUDE_DIRS})
 include_directories(userland)
 include_directories(userland/interface/vcos/pthreads)
 include_directories(userland/interface/vmcs_host/linux)
