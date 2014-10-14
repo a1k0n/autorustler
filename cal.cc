@@ -7,13 +7,24 @@
 #include <unistd.h>
 #include <math.h>
 #include <Eigen/Dense>
+#include <iostream>
 #include "imu/imu.h"
 
+using Eigen::Matrix3f;
 using Eigen::Vector3f;
 
 volatile bool done = false;
 
 void handle_sigint(int signo) { done = true; }
+
+Matrix3f SO3(Vector3f w) {
+  Matrix3f m;
+  m <<
+      0, -w[2], w[1],
+      w[2], 0, -w[0],
+      -w[1], w[0], 0;
+  return m;
+}
 
 int main() {
   int i2cfd = open("/dev/i2c-1", O_RDWR);
@@ -29,35 +40,37 @@ int main() {
   IMUState s;
   const int period = 50000;
   const float gain = 1.0;
-  Vector3f b(0, 0, 0);
   imu_read(i2cfd, &s);
 
-  const Vector3f gyromean(49.68937876, -31.1743487, -16.9739479);
-  Vector3f lastm(s.mag_x, s.mag_y, s.mag_z);
+  const Vector3f gyromean(50, -31, -17);
+  Vector3f lastx(s.mag_x, s.mag_y, s.mag_z);
+  // http://www.roboticsproceedings.org/rss09/p50.pdf
+  Matrix3f denom;
+  Vector3f num;
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
     imu_read(i2cfd, &s);
 
-    // some sort of kalman filter
-    // gyro has a slight offset
-    // magnetometer has a huge offset
-    // there may be cross-axis misalignment
-    // g' ~ N(g + bg, sigmag)
-    // m' ~ N(m + bm, sigmam)
+    // angular velocity
+    Vector3f w(s.gyro_x, s.gyro_z, s.gyro_y);
+    w -= gyromean;
 
-    // float m[3] = {s.mag_x - b[0], s.mag_y - b[1], s.mag_z - b[2]};
-    Vector3f m(s.mag_x - b[0], s.mag_y - b[1], s.mag_z - b[2]);
-    Vector3f dm(m - lastm);
-    float dmmag = dm.norm();
-    if (dmmag > 10) {
-      float scale = gain * (m.norm() - lastm.norm()) / dmmag;
-      b += scale * dm;
-      printf("b:[%f %f %f] m:[%f %f %f]\n", b[0], b[1], b[2],
-             m[0], m[1], m[2]);
-    }
+    Vector3f x(s.mag_x, s.mag_y, s.mag_z);
+    Vector3f y = (x - lastx) + w.cross(x);
+    Matrix3f Wi = SO3(w);
+    num += Wi * y;
+    denom += Wi * Wi;
 
-    lastm = m;
+    Vector3f bhat = denom.ldlt().solve(num);
+
+    lastx = x;
+
+    x -= bhat;
+    printf("b:[%f %f %f] w:[%5.0f %5.0f %5.0f] x:[%4.1f %4.1f %4.1f]\n",
+           bhat[0], bhat[1], bhat[2],
+           w[0], w[1], w[2],
+           x[0], x[1], x[2]);
 
     timeval tv;
     gettimeofday(&tv, NULL);
