@@ -97,13 +97,21 @@ int main() {
     return 1;
   }
 
-  // TODO: launch IMU/radio thread
-
   int gps_fd = sirf_open();
   if (gps_fd == -1) {
     fprintf(stderr, "GPS serial port init fail\n");
     return 1;
   }
+
+  if (!StartCamera()) {
+    fprintf(stderr, "cam init fail\n");
+    return 1;
+  }
+
+  // drop root privs, return to user 'pi'
+  setgid(1000);
+  setuid(1000);
+
   pthread_t gps_thread;
   pthread_create(&gps_thread, NULL, GPSThread,
                  reinterpret_cast<void*>(gps_fd));
@@ -111,11 +119,6 @@ int main() {
   pthread_t imu_thread;
   pthread_create(&imu_thread, NULL, IMUThread,
                  reinterpret_cast<void*>(i2c_fd));
-
-  if (!StartCamera()) {
-    fprintf(stderr, "cam init fail\n");
-    return 1;
-  }
 
   signal(SIGINT, handle_sigint);
   signal(SIGTERM, handle_sigint);
