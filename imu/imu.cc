@@ -39,11 +39,13 @@ int imu_init(int i2cfd) {
 }
 
 int imu_read(int i2cfd, IMUState *s) {
-  uint8_t axis_buf[6];
-  i2c_read(i2cfd, ADDR_ITG3200, 0x1d, axis_buf, 6);
-  s->gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // roll
-  s->gyro_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // pitch
-  s->gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // yaw
+  uint8_t axis_buf[8];
+  i2c_read(i2cfd, ADDR_ITG3200, 0x1b, axis_buf, 8);
+  // temperature is 280 LSB/deg C, -13200 LSB @35 C
+  s->gyro_temp = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));
+  s->gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // roll
+  s->gyro_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // pitch
+  s->gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+6));  // yaw
 
   i2c_read(i2cfd, ADDR_HMC5883L, 0x03, axis_buf, 6);
   s->mag_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // front?

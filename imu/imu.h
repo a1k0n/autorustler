@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 struct IMUState {
-  int16_t gyro_x, gyro_y, gyro_z;
+  int16_t gyro_x, gyro_y, gyro_z, gyro_temp;
   int16_t mag_x, mag_y, mag_z;
   int16_t accel_x, accel_y, accel_z;
 };
