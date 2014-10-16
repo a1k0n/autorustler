@@ -11,9 +11,9 @@
 #include <iostream>
 #include "imu/imu.h"
 
-using Eigen::Matrix3f;
+using Eigen::Matrix4f;
 using Eigen::Vector3f;
-using Eigen::MatrixXf;
+using Eigen::Vector4f;
 
 typedef Eigen::Matrix<float, 6, 6> Matrix6f;
 typedef Eigen::Matrix<float, 6, 1> Vector6f;
@@ -30,11 +30,6 @@ void handle_sigint(int signo) { done = true; }
 const Vector3f gyrocal_b(-182.11, -179.32, -212.83);
 const Vector3f gyrocal_m(-0.01169, -0.01123, -0.01164);
 
-// covariance of magnetometer reading / state
-const float kMagStateCov = 10.0;
-const float kMagOffsetCov = 0.1;
-const float kMagReadingCov = 16.0;
-
 int main() {
   int i2cfd = open("/dev/i2c-1", O_RDWR);
   if (i2cfd == -1) {
@@ -50,21 +45,8 @@ int main() {
   const int period = 50000;
   imu_read(i2cfd, &s);
 
-  Vector3f lastx(s.mag_x, s.mag_y, s.mag_z);
-  // http://www.roboticsproceedings.org/rss09/p50.pdf
-  const float h = period / 1000000.0f;
-  Matrix6f Q = Matrix6f::Zero();
-  Q.topLeftCorner(3, 3) = Matrix3f::Identity() * kMagStateCov;
-  Q.bottomRightCorner(3, 3) = Matrix3f::Identity() * kMagOffsetCov;
-  Matrix3f R = Matrix3f::Identity() * kMagReadingCov;
-
-  // state covariance estimate, initially large
-  Matrix6f P = Matrix6f::Zero();
-  P.topLeftCorner(3, 3) = 100 * Matrix3f::Identity();
-  P.bottomRightCorner(3, 3) = 0.1 * Matrix3f::Identity();
-  Vector6f xk = Vector6f::Zero();  // predicted state, initially 0 also
-  Vector3f wprev = Vector3f::Zero();
-  Vector3f mprev = Vector3f::Zero();
+  Matrix4f XTX = 0.1 * Matrix4f::Identity();
+  Vector4f XTY = Vector4f::Zero();
 
   // our state is [nx ny nz bx by bz] where n is the unbiased magnetometer
   // reading, i.e., n = m - b, and b is the magnetometer bias bias.
@@ -75,6 +57,7 @@ int main() {
     gettimeofday(&tv0, NULL);
     imu_read(i2cfd, &s);
 
+#if 0
     // angular velocity in car coords
     // car: x right, y up, z forward
     // gyro: x roll (z), y -pitch(-x), z -yaw (-y)
@@ -83,108 +66,25 @@ int main() {
     w0 -= gyrocal_b + s.gyro_temp * gyrocal_m;
     // datasheet says scale factor is 14.375 LSB/deg/s
     Vector3f w = w0 * M_PI / (180.0 * 14.375);
-    // mag: x back (-z), y up(y), z right
-    Vector3f m(s.mag_z, s.mag_y, -s.mag_x);
     // accel: x front (z), y left (-x), z down (-y)
     Vector3f g(-s.accel_y, -s.accel_z, s.accel_x);
-
-    // integrate using the midpoint method
-    Vector3f wmid = (wprev + w) / 2;
-
-    // Kalman filter: F matrix depends on w, so recompute it here
-    Matrix6f F = Matrix6f::Zero();
-    float wnorm = wmid.norm();
-    Matrix3f Rw = Matrix3f::Identity();
-    if (wnorm > 0) {
-      // if we rotate to the right, then the apparent rotation of the north
-      // pole should be left, so the angle is -wnorm * h
-      Rw = Eigen::AngleAxisf(-wnorm * h, wmid / wnorm);
-    }
-    F.block<3, 3>(0, 0) = Rw;
-    F.block<3, 3>(3, 3) = Matrix3f::Identity();
-
-    // std::cout << "---- F ----" << std::endl;
-    // std::cout << F << std::endl;
-
-    // the H matrix is a 3x6 matrix with just identity in the left half
-    // and will be used implicitly w/ topLeftCorner(3, 3)
-
-    // predicted new state & covariance
-    // std::cout << xk.transpose() << " - ";
-    xk = F * xk;
-    // std::cout << xk.transpose() << std::endl;
-    P = F * P * F.transpose() + Q;
-#if 0
-    Vector3f m1 = R * mprev;
-    printf("prev: [%f %f %f] pred: [%f %f %f] actual: [%f %f %f]\n",
-           mprev[0], mprev[1], mprev[2],
-           m1[0], m1[1], m1[2], m[0], m[1], m[2]);
 #endif
 
-    Vector3f y = m - xk.block<3, 1>(0, 0) - xk.block<3, 1>(3, 0);
-    // H P H^T = [I I] [a b] [I] = a+b+c+d
-    //                 [c d] [I]
-    Matrix3f Pul = P.block<3, 3>(0, 0);
-    Matrix3f Pur = P.block<3, 3>(0, 3);
-    Matrix3f Pll = P.block<3, 3>(3, 0);
-    Matrix3f Plr = P.block<3, 3>(3, 3);
-    Matrix3f S = Pul + Pur + Pll + Plr + R;
-    MatrixXf PHT(3, 6);  // P * H^T = [Pu Pl]
-    PHT.block<3, 3>(0, 0) = Pul + Pur;
-    PHT.block<3, 3>(0, 3) = Pll + Plr;
-    MatrixXf K = S.ldlt().solve(PHT).transpose();
-    // std::cout << "---- K ----" << std::endl;
-    // std::cout << K << std::endl;
+    Vector4f b(s.mag_x, s.mag_y, s.mag_z, 1);
+    XTX += b * b.transpose();
+    float bmag = b.squaredNorm();
+    XTY += Vector4f(bmag * b[0], bmag * b[1], bmag * b[2], bmag);
 
-    // compute new estimated state and covariance
-    xk += K * y;
+    Vector4f beta = XTX.ldlt().solve(XTY);
+    Vector3f bias = beta.block<3, 1>(0, 0) / 2;
+    bmag = sqrt(b[3] + bias.squaredNorm());
 
-    // std::cout << "---- P ----" << std::endl;
-    // std::cout << P << std::endl;
-
-    Matrix3f Ku = K.block<3, 3>(0, 0);
-    Matrix3f Kl = K.block<3, 3>(3, 0);
-    P.block<3, 3>(0, 0) -= Ku;
-    P.block<3, 3>(0, 3) -= Ku;
-    P.block<3, 3>(3, 0) -= Kl;
-    P.block<3, 3>(3, 3) -= Kl;
-
-    printf("%0.1f C b:[%f %f %f] w:[%5.2f %5.2f %5.2f] x:[%4.1f %4.1f %4.1f] "
-           "y:[%4.1f %4.1f %4.1f]\n",
-           (s.gyro_temp - -13200) * (1.0 / 280.0) + 35.0,
-           xk[3], xk[4], xk[5],
-           w[0], w[1], w[2],
-           xk[0], xk[1], xk[2],
-           y[0], y[1], y[2]);
-    std::cout << "---- P ----" << std::endl;
-    std::cout << P << std::endl;
-
-    wprev = w;
-    mprev = m;
-
-#if 0
-    Vector3f y = (x - lastx) + w.cross(x);
-    Matrix3f Wi = SO3(w);
-    num += Wi * y;
-    denom += Wi * Wi;
-
-    Vector3f bhat = denom.ldlt().solve(num);
-
-    lastx = x;
-
-    x -= bhat;
-    // project magnetometer vector onto ground, as determined by the
-    // accelerometer
-    Vector3f proj = x - g * (x.dot(g) / (x.norm() * g.norm()));
-    float angle = atan2(proj[2], proj[0]);
-    printf("%0.1f C b:[%f %f %f] w:[%5.0f %5.0f %5.0f] x:[%4.1f %4.1f %4.1f] "
-           "%0.0f\n",
-           (s.gyro_temp - -13200) * (1.0 / 280.0) + 35.0,
-           bhat[0], bhat[1], bhat[2],
-           w0[0], w0[1], w0[2],
-           x[0], x[1], x[2],
-           180.0 * angle / M_PI);
-#endif
+    printf("b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
+           "m:[%4.1f %4.1f %4.1f] B: %f\n",
+           bias[0], bias[1], bias[2],
+           b[0] - bias[0], b[1] - bias[1], b[2] - bias[2],
+           b[0], b[1], b[2],
+           bmag);
 
     timeval tv;
     gettimeofday(&tv, NULL);
