@@ -31,8 +31,8 @@ const Vector3f gyrocal_b(-182.11, -179.32, -212.83);
 const Vector3f gyrocal_m(-0.01169, -0.01123, -0.01164);
 
 // covariance of magnetometer reading / state
-const float kMagStateCov = 1.0;
-const float kMagOffsetCov = 0.0;
+const float kMagStateCov = 10.0;
+const float kMagOffsetCov = 0.1;
 const float kMagReadingCov = 16.0;
 
 int main() {
@@ -59,11 +59,17 @@ int main() {
   Matrix3f R = Matrix3f::Identity() * kMagReadingCov;
 
   // state covariance estimate, initially large
-  Matrix6f P = 10 * Matrix6f::Identity();
+  Matrix6f P = Matrix6f::Zero();
+  P.topLeftCorner(3, 3) = 100 * Matrix3f::Identity();
+  P.bottomRightCorner(3, 3) = 0.1 * Matrix3f::Identity();
   Vector6f xk = Vector6f::Zero();  // predicted state, initially 0 also
   Vector3f wprev = Vector3f::Zero();
   Vector3f mprev = Vector3f::Zero();
 
+  // our state is [nx ny nz bx by bz] where n is the unbiased magnetometer
+  // reading, i.e., n = m - b, and b is the magnetometer bias bias.
+  // prediction: n' = R(w) * n, b' = b, so F = [[R(w) 0] [0 I]]
+  // measurement: z = n + b, so H = [I I]
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
@@ -94,10 +100,8 @@ int main() {
       // pole should be left, so the angle is -wnorm * h
       Rw = Eigen::AngleAxisf(-wnorm * h, wmid / wnorm);
     }
-    F.topLeftCorner(3, 3) = Rw;
-    F.topRightCorner(3, 3) = Matrix3f::Identity() - Rw;
-    F.bottomRightCorner(3, 3) = Matrix3f::Identity();
-    F.eval();
+    F.block<3, 3>(0, 0) = Rw;
+    F.block<3, 3>(3, 3) = Matrix3f::Identity();
 
     // std::cout << "---- F ----" << std::endl;
     // std::cout << F << std::endl;
@@ -106,7 +110,9 @@ int main() {
     // and will be used implicitly w/ topLeftCorner(3, 3)
 
     // predicted new state & covariance
+    // std::cout << xk.transpose() << " - ";
     xk = F * xk;
+    // std::cout << xk.transpose() << std::endl;
     P = F * P * F.transpose() + Q;
 #if 0
     Vector3f m1 = R * mprev;
@@ -115,24 +121,40 @@ int main() {
            m1[0], m1[1], m1[2], m[0], m[1], m[2]);
 #endif
 
-    Vector3f y = m - xk.topLeftCorner(3, 1);
-    Matrix3f S = P.topLeftCorner(3, 3) + R;
-    // X is the inverse of S, transposed... but S is symmetric anyway
-    Matrix3f X = S.ldlt().solve(Matrix3f::Identity());
-    MatrixXf K = P.topLeftCorner(6, 3) * X; // K is 6x3
-    std::cout << "---- K ----" << std::endl;
-    std::cout << K << std::endl;
+    Vector3f y = m - xk.block<3, 1>(0, 0) - xk.block<3, 1>(3, 0);
+    // H P H^T = [I I] [a b] [I] = a+b+c+d
+    //                 [c d] [I]
+    Matrix3f Pul = P.block<3, 3>(0, 0);
+    Matrix3f Pur = P.block<3, 3>(0, 3);
+    Matrix3f Pll = P.block<3, 3>(3, 0);
+    Matrix3f Plr = P.block<3, 3>(3, 3);
+    Matrix3f S = Pul + Pur + Pll + Plr + R;
+    MatrixXf PHT(3, 6);  // P * H^T = [Pu Pl]
+    PHT.block<3, 3>(0, 0) = Pul + Pur;
+    PHT.block<3, 3>(0, 3) = Pll + Plr;
+    MatrixXf K = S.ldlt().solve(PHT).transpose();
+    // std::cout << "---- K ----" << std::endl;
+    // std::cout << K << std::endl;
 
     // compute new estimated state and covariance
     xk += K * y;
-    P.topLeftCorner(6, 3) -= K;
+
+    // std::cout << "---- P ----" << std::endl;
+    // std::cout << P << std::endl;
+
+    Matrix3f Ku = K.block<3, 3>(0, 0);
+    Matrix3f Kl = K.block<3, 3>(3, 0);
+    P.block<3, 3>(0, 0) -= Ku;
+    P.block<3, 3>(0, 3) -= Ku;
+    P.block<3, 3>(3, 0) -= Kl;
+    P.block<3, 3>(3, 3) -= Kl;
 
     printf("%0.1f C b:[%f %f %f] w:[%5.2f %5.2f %5.2f] x:[%4.1f %4.1f %4.1f] "
            "y:[%4.1f %4.1f %4.1f]\n",
            (s.gyro_temp - -13200) * (1.0 / 280.0) + 35.0,
            xk[3], xk[4], xk[5],
            w[0], w[1], w[2],
-           xk[0] - xk[3], xk[1] - xk[4], xk[2] - xk[5],
+           xk[0], xk[1], xk[2],
            y[0], y[1], y[2]);
     std::cout << "---- P ----" << std::endl;
     std::cout << P << std::endl;
