@@ -42,7 +42,7 @@ int main() {
   imu_init(i2cfd);
 
   IMUState s;
-  const int period = 50000;
+  const int period = 200000;
   imu_read(i2cfd, &s);
 
   Matrix4f XTX = 0.1 * Matrix4f::Identity();
@@ -52,6 +52,7 @@ int main() {
   // reading, i.e., n = m - b, and b is the magnetometer bias bias.
   // prediction: n' = R(w) * n, b' = b, so F = [[R(w) 0] [0 I]]
   // measurement: z = n + b, so H = [I I]
+  Vector3f lastm = Vector3f::Zero();
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
@@ -71,21 +72,30 @@ int main() {
 #endif
 
     Vector4f b(s.mag_x, s.mag_y, s.mag_z, 1);
-    XTX += b * b.transpose();
+    Vector3f m(s.mag_x, s.mag_y, s.mag_z);
+    float sampleweight = 1;
+    if (m.squaredNorm() > 0 && lastm.squaredNorm() > 0) {
+      sampleweight = 1 - m.dot(lastm) / (lastm.norm() * m.norm());
+    }
+    XTX += sampleweight * b * b.transpose();
+    std::cout << XTX << std::endl;
     float bmag = b.squaredNorm();
-    XTY += Vector4f(bmag * b[0], bmag * b[1], bmag * b[2], bmag);
+    XTY += sampleweight * bmag * b;
+    std::cout << XTY.transpose() << std::endl;
 
     Vector4f beta = XTX.ldlt().solve(XTY);
     Vector3f bias = beta.block<3, 1>(0, 0) / 2;
-    bmag = sqrt(b[3] + bias.squaredNorm());
+    bmag = sqrt(beta[3] + bias.squaredNorm());
 
-    printf("b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
+    printf("%0.3f b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
            "m:[%4.1f %4.1f %4.1f] B: %f\n",
+           sampleweight,
            bias[0], bias[1], bias[2],
            b[0] - bias[0], b[1] - bias[1], b[2] - bias[2],
            b[0], b[1], b[2],
            bmag);
 
+    lastm = m;
     timeval tv;
     gettimeofday(&tv, NULL);
     int delay = period - (tv.tv_usec % period);
