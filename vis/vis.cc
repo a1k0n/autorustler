@@ -11,6 +11,11 @@
 #include "fast/fast.h"
 #include "vikit/vision.h"
 
+#include "car/radio.h"
+#include "imu/imu.h"
+#include "gps/sirf.h"
+#include "ui/recording.h"
+
 using std::min;
 using std::max;
 using std::vector;
@@ -102,6 +107,10 @@ void CalibrateCamera(const uint8_t *yuvbuf) {
     calibrated = true;
   }
 }
+
+IMURawState imu_state;
+RCState rc_state;
+sirf_navdata gps_state;
 
 void RenderFrame(uint32_t sec, uint32_t usec,
                  const uint8_t *yuvbuf, SDL_Surface *frame) {
@@ -213,6 +222,27 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     pixbuf[(479 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(481 - y) * 640 - x - 1] = 0xff00ff00;
   }
+
+  // draw indicators on the screen for various things
+  // "zero" is 116
+  for (int y = 0; y < 8; y++) {
+    if (rc_state.throttle < 116) {
+      for (int x = rc_state.throttle; x <= 116; x++) {
+        pixbuf[y*640 + x] = 0xff0000ff;  // red: brake
+      }
+    } else {
+      for (int x = 115; x <= rc_state.throttle; x++) {
+        pixbuf[y*640 + x] = 0xff00ff00;  // green: throttle
+      }
+    }
+    // black|white: steering
+    pixbuf[(y+8)*640 + rc_state.steering] = 0xff000000;
+    pixbuf[(y+8)*640 + rc_state.steering+1] = 0xffffffff;
+    // red: gyro
+    int gz = std::min(638, std::max(0, 116 + (imu_state.gyro_z / 40)));
+    pixbuf[(y+16)*640 + gz] = 0xff0000ff;
+    pixbuf[(y+16)*640 + gz+1] = 0xff0000ff;
+  }
   printf("[%d.%06d] threshold %d %d keypoints\n", sec, usec,
          20, nkps);
 }
@@ -249,23 +279,58 @@ int main(int argc, char *argv[]) {
       0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
 
   int frameno = 0;
+  memset(&imu_state, 0, sizeof(imu_state));
+  memset(&rc_state, 0, sizeof(rc_state));
+  memset(&gps_state, 0, sizeof(gps_state));
   for (;;) {
     uint32_t sec, usec;
     uint8_t yuvbuf[320*360];
-    if (fread(&sec, 1, 4, fp) < 4)
+    RecordHeader rh;
+    if (fread(&rh, 1, sizeof(rh), fp) < sizeof(rh))
       break;
-    if (fread(&usec, 1, 4, fp) < 4)
+    if (rh.len > sizeof(yuvbuf)) {
+      fprintf(stderr, "unexpectedly large record: type %d len %d\n",
+              rh.recordtype, rh.len);
       break;
-    if (fread(yuvbuf, 1, sizeof(yuvbuf), fp) < sizeof(yuvbuf))
+    }
+    if (fread(yuvbuf, 1, rh.len, fp) != rh.len) {
+      fprintf(stderr, "truncated record\n");
       break;
-    SDL_LockSurface(frame);
-    RenderFrame(sec, usec, yuvbuf, frame);
-    SDL_UnlockSurface(frame);
-    SDL_BlitSurface(frame, NULL, screen, NULL);
-    SDL_Flip(screen);
-    if (!Poll())
-      break;
-    SDL_Delay(50);
+    }
+    switch (rh.recordtype) {
+      case RecordHeader::VideoFrame:
+        {
+          SDL_LockSurface(frame);
+          // FIXME: render latest IMU/GPS state to framebuf
+          RenderFrame(sec, usec, yuvbuf, frame);
+          SDL_UnlockSurface(frame);
+          SDL_BlitSurface(frame, NULL, screen, NULL);
+          SDL_Flip(screen);
+          if (!Poll())
+            return 0;
+          SDL_Delay(50);
+        }
+        break;
+      case RecordHeader::IMUFrame:
+        {
+          memcpy(&imu_state, yuvbuf, sizeof(imu_state));
+          memcpy(&rc_state, yuvbuf + sizeof(imu_state), sizeof(rc_state));
+#if 0
+          fprintf(stderr, "imu [%5d %5d %5d] [%5d %5d %5d] %d %d\n",
+                  imu_state.gyro_x, imu_state.gyro_y, imu_state.gyro_z,
+                  imu_state.mag_x, imu_state.mag_y, imu_state.mag_z,
+                  rc_state.throttle, rc_state.steering);
+#endif
+        }
+        break;
+      case RecordHeader::GPSFrame:
+        {
+          memcpy(&gps_state, yuvbuf, sizeof(gps_state));
+          fprintf(stderr, "gps xyz[%d %d %d] v[%d %d %d]\n",
+                  gps_state.x, gps_state.y, gps_state.z,
+                  gps_state.v8x, gps_state.v8y, gps_state.v8z);
+        }
+    }
   }
 
   return 0;

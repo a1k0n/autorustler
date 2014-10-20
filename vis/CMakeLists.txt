@@ -1,12 +1,16 @@
 cmake_minimum_required(VERSION 2.8)
 
 include(FindSDL)
+find_package(PkgConfig)
 find_package(OpenCV REQUIRED)
 find_package(fast REQUIRED)
 find_package(vikit_common REQUIRED)
+pkg_check_modules(EIGEN REQUIRED eigen3)
 
+include_directories(${EIGEN_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(${fast_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(${vikit_common_INCLUDE_DIRS})
+INCLUDE_DIRECTORIES(..)
 
 add_executable(vis vis.cc)
 target_link_libraries(vis ${SDL_LIBRARY}
