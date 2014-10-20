@@ -168,6 +168,7 @@ void RenderFrame(uint32_t sec, uint32_t usec,
   }
 #endif
 
+#if 0
   static struct {
     float x, y, score;
     bool has_corner;
@@ -222,6 +223,9 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     pixbuf[(479 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(481 - y) * 640 - x - 1] = 0xff00ff00;
   }
+  printf("[%d.%06d] threshold %d %d keypoints\n", sec, usec,
+         20, nkps);
+#endif
 
   // draw indicators on the screen for various things
   // "zero" is 116
@@ -239,12 +243,28 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     pixbuf[(y+8)*640 + rc_state.steering] = 0xff000000;
     pixbuf[(y+8)*640 + rc_state.steering+1] = 0xffffffff;
     // red: gyro
+    int gx = std::min(638, std::max(0, 116 + (imu_state.gyro_x / 40)));
+    pixbuf[(y+16)*640 + gx] = 0xff0000ff;
+    pixbuf[(y+16)*640 + gx+1] = 0xff0000ff;
+    int gy = std::min(638, std::max(0, 116 + (imu_state.gyro_y / 40)));
+    pixbuf[(y+24)*640 + gy] = 0xff0000ff;
+    pixbuf[(y+24)*640 + gy+1] = 0xff0000ff;
     int gz = std::min(638, std::max(0, 116 + (imu_state.gyro_z / 40)));
-    pixbuf[(y+16)*640 + gz] = 0xff0000ff;
-    pixbuf[(y+16)*640 + gz+1] = 0xff0000ff;
+    pixbuf[(y+32)*640 + gz] = 0xff0000ff;
+    pixbuf[(y+32)*640 + gz+1] = 0xff0000ff;
   }
-  printf("[%d.%06d] threshold %d %d keypoints\n", sec, usec,
-         20, nkps);
+
+  // blue: accel
+  int ax = std::min(638, std::max(0, 116 + (-imu_state.accel_y / 16)));
+  int ay = std::min(400, std::max(0, 100 + (imu_state.accel_x / 16)));
+  pixbuf[(40+100)*640 + 116] = 0xff000000;
+  pixbuf[(40+100)*640 + 116+1] = 0xff000000;
+  pixbuf[(40+1+100)*640 + 116] = 0xff000000;
+  pixbuf[(40+1+100)*640 + 116+1] = 0xff000000;
+  pixbuf[(40+ay)*640 + ax] = 0xff0000ff;
+  pixbuf[(40+ay)*640 + ax+1] = 0xff0000ff;
+  pixbuf[(40+1+ay)*640 + ax] = 0xff0000ff;
+  pixbuf[(40+1+ay)*640 + ax+1] = 0xff0000ff;
 }
 
 int main(int argc, char *argv[]) {
@@ -326,7 +346,7 @@ int main(int argc, char *argv[]) {
       case RecordHeader::GPSFrame:
         {
           memcpy(&gps_state, yuvbuf, sizeof(gps_state));
-          fprintf(stderr, "gps xyz[%d %d %d] v[%d %d %d]\n",
+          fprintf(stderr, "%d %d %d %d %d %d\n",
                   gps_state.x, gps_state.y, gps_state.z,
                   gps_state.v8x, gps_state.v8y, gps_state.v8z);
         }
