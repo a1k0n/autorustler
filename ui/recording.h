@@ -13,6 +13,12 @@ struct RecordHeader {
   uint32_t len;
   uint32_t recordtype;
 
+  enum {
+    VideoFrame = 1,
+    IMUFrame = 2,
+    GPSFrame = 3
+  };
+
   void Init(uint32_t l, uint32_t typ) {
     struct timeval tv;
     gettimeofday(&tv, NULL);

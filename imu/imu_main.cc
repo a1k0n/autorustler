@@ -20,14 +20,14 @@ int main() {
 
   signal(SIGINT, handle_sigint);
 
-  imu_init(i2cfd);
+  IMU imu(i2cfd);
   printf("# t gx gy gz mx my mz ax ay az\n");
 
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    IMUState s;
-    imu_read(i2cfd, &s);
+    IMURawState s;
+    imu.ReadRaw(&s);
 #if 0
     fprintf(stderr, "gyro [%+4d %+4d %+4d] mag [%+4d %+4d %+4d] "
             "acc [%+4d %+4d %+4d]\e[K\r",

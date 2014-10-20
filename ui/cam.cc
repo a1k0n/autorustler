@@ -9,7 +9,7 @@ class UICamReceiver: public CameraReceiver {
   void OnFrame(uint8_t *buf, size_t length) {
     if (uistate.is_recording) {
       RecordHeader rh;
-      rh.Init(length, 1);
+      rh.Init(length, RecordHeader::VideoFrame);
       recording.StartWriting();
       recording.Write(reinterpret_cast<uint8_t*>(&rh), sizeof(rh));
       recording.Write(buf, length);

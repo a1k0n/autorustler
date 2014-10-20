@@ -47,7 +47,7 @@ void GPSUpdate(const sirf_navdata& data) {
   uistate.gps_SVs = data.svs;
 
   RecordHeader rh;
-  rh.Init(sizeof(data), 3);
+  rh.Init(sizeof(data), RecordHeader::GPSFrame);
   recording.StartWriting();
   recording.Write(reinterpret_cast<const uint8_t*>(&rh), sizeof(rh));
   recording.Write(reinterpret_cast<const uint8_t*>(&data), sizeof(data));

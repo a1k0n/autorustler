@@ -13,7 +13,8 @@ void* IMUThread(void* data) {
 
   RadioControl rc;
 
-  if (imu_init(i2cfd)) {
+  IMU imu;
+  if (!imu.Init(i2cfd)) {
     fprintf(stderr, "imu init fail\n");
     exit(1);
     return NULL;
@@ -26,27 +27,31 @@ void* IMUThread(void* data) {
   }
 
 
-  IMUState s;
+  IMURawState s;
   RCState rcstate;
   float vbat;
 
   while (!uistate.done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    imu_read(i2cfd, &s);
+    if (!imu.ReadRaw(&s)) {
+      sleep(1);
+      continue;
+    }
+    imu.Calibrate(s, &uistate.imu_state);
     if (!rc.GetRadioState(&rcstate)) {
       rc.GetRadioState(&rcstate);
     }
     if (!rc.GetBatteryVoltage(&vbat))
       rc.GetBatteryVoltage(&vbat);
 
-    memcpy(const_cast<IMUState*>(&uistate.imu_state), &s, sizeof(s));
-    memcpy(const_cast<RCState*>(&uistate.rc_state), &rcstate, sizeof(rcstate));
+    memcpy(&uistate.rc_state, &rcstate, sizeof(rcstate));
     uistate.vbat = vbat;
 
     if (uistate.is_recording) {
       RecordHeader rh;
-      rh.Init(sizeof(s) + sizeof(rcstate) + sizeof(vbat), 2);
+      rh.Init(sizeof(s) + sizeof(rcstate) + sizeof(vbat),
+              RecordHeader::IMUFrame);
       recording.StartWriting();
       recording.Write(reinterpret_cast<uint8_t*>(&rh), sizeof(rh));
       recording.Write(reinterpret_cast<uint8_t*>(&s), sizeof(s));
@@ -69,4 +74,6 @@ void* IMUThread(void* data) {
     if (delay > 0)
       usleep(delay);
   }
+
+  return NULL;
 }

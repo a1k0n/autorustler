@@ -17,7 +17,7 @@ struct UIState {
   int gps_SVs;
 };
 
-extern volatile UIState uistate;
+extern UIState uistate;
 extern Recording recording;
 
 #endif  // UI_UISTATE_H_

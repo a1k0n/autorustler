@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <iostream>
+#include <vector>
 #include "imu/imu.h"
 
 using Eigen::Matrix4f;
@@ -29,6 +30,20 @@ void handle_sigint(int signo) { done = true; }
 // m [-0.01169129 -0.01123162 -0.01164203]
 const Vector3f gyrocal_b(-182.11, -179.32, -212.83);
 const Vector3f gyrocal_m(-0.01169, -0.01123, -0.01164);
+const float pointcloud_dist = 200.0f;
+
+bool CheckPointCloud(const Vector3f& pt, std::vector<Vector3f> *pointcloud) {
+  for (int i = 0; i < pointcloud->size(); i++) {
+    if (((*pointcloud)[i] - pt).squaredNorm() <
+        pointcloud_dist*pointcloud_dist) {
+      return false;
+    }
+  }
+  fprintf(stderr, "added [%f %f %f] to point cloud #%d\n",
+          pt[0], pt[1], pt[2], pointcloud->size());
+  pointcloud->push_back(pt);
+  return true;
+}
 
 int main() {
   int i2cfd = open("/dev/i2c-1", O_RDWR);
@@ -39,24 +54,26 @@ int main() {
 
   signal(SIGINT, handle_sigint);
 
-  imu_init(i2cfd);
+  IMU imu(i2cfd);
 
-  IMUState s;
   const int period = 200000;
-  imu_read(i2cfd, &s);
 
   Matrix4f XTX = 0.1 * Matrix4f::Identity();
   Vector4f XTY = Vector4f::Zero();
+  std::vector<Vector3f> pointcloud;
 
   // our state is [nx ny nz bx by bz] where n is the unbiased magnetometer
   // reading, i.e., n = m - b, and b is the magnetometer bias bias.
   // prediction: n' = R(w) * n, b' = b, so F = [[R(w) 0] [0 I]]
   // measurement: z = n + b, so H = [I I]
-  Vector3f lastm = Vector3f::Zero();
+  // Vector3f lastm = Vector3f::Zero();
+  Vector4f beta = Vector4f::Zero();
+  printf("# mx my mz bx by bz bmag\n");
   while (!done) {
+    IMURawState s;
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    imu_read(i2cfd, &s);
+    imu.ReadRaw(&s);
 
 #if 0
     // angular velocity in car coords
@@ -74,28 +91,45 @@ int main() {
     Vector4f b(s.mag_x, s.mag_y, s.mag_z, 1);
     Vector3f m(s.mag_x, s.mag_y, s.mag_z);
     float sampleweight = 1;
+#if 0
     if (m.squaredNorm() > 0 && lastm.squaredNorm() > 0) {
       sampleweight = 1 - m.dot(lastm) / (lastm.norm() * m.norm());
     }
+#else
+    if (!CheckPointCloud(m, &pointcloud)) {
+      Vector3f bias = beta.block<3, 1>(0, 0) / 2;
+      float bmag = sqrt(beta[3] + bias.squaredNorm());
+      Vector3f x = m - bias;
+      fprintf(stderr, "b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
+              "m:[%4.1f %4.1f %4.1f] B: %f\r",
+              bias[0], bias[1], bias[2],
+              x[0], x[1], x[2], m[0], m[1], m[2], bmag);
+      fflush(stderr);
+      continue;
+    }
+#endif
     XTX += sampleweight * b * b.transpose();
-    std::cout << XTX << std::endl;
+    // std::cerr << XTX << std::endl;
     float bmag = b.squaredNorm();
     XTY += sampleweight * bmag * b;
-    std::cout << XTY.transpose() << std::endl;
+    // std::cerr << XTY.transpose() << std::endl;
 
-    Vector4f beta = XTX.ldlt().solve(XTY);
+    beta = XTX.ldlt().solve(XTY);
     Vector3f bias = beta.block<3, 1>(0, 0) / 2;
     bmag = sqrt(beta[3] + bias.squaredNorm());
 
-    printf("%0.3f b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
+    printf("%e %e %e %e %e %e %e\n",
+           m[0], m[1], m[2], bias[0], bias[1], bias[2], bmag);
+#if 0
+    printf("b:[%f %f %f] x:[%4.1f %4.1f %4.1f] "
            "m:[%4.1f %4.1f %4.1f] B: %f\n",
-           sampleweight,
            bias[0], bias[1], bias[2],
            b[0] - bias[0], b[1] - bias[1], b[2] - bias[2],
            b[0], b[1], b[2],
            bmag);
-
     lastm = m;
+#endif
+
     timeval tv;
     gettimeofday(&tv, NULL);
     int delay = period - (tv.tv_usec % period);

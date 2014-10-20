@@ -18,7 +18,7 @@
 #include "ui/recording.h"
 #include "ui/uistate.h"
 
-volatile UIState uistate;
+UIState uistate;
 Recording recording;
 
 void handle_sigint(int signo) { uistate.done = true; }
@@ -127,7 +127,7 @@ int main() {
 
   char buf[84];
   int frameno = 0;
-  const uint8_t dotted_circle[9] = {
+  const uint8_t circle[9] = {
     0x3c, 0x42, 0x81, 0x81, 0x81, 0x81, 0x81, 0x42, 0x3c};
 
   while (!uistate.done) {
@@ -226,9 +226,9 @@ int main() {
 
     {
       // rest of 2nd line and 1/2 of 3rd line: gyro axes
-      int gx = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_x / 200));
-      int gy = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_y / 200));
-      int gz = std::min(19, std::max(0, 10 + uistate.imu_state.gyro_z / 200));
+      int gx = fmin(19, fmax(0, 10 + uistate.imu_state.w[0]*4));
+      int gy = fmin(19, fmax(0, 10 + uistate.imu_state.w[1]*4));
+      int gz = fmin(19, fmax(0, 10 + uistate.imu_state.w[2]*4));
       screen[84 + 63 + gx] |= 0xc0;
       screen[84 + 64 + gx] |= 0xc0;
       screen[2*84 + 63 + gy] |= 0x03;
@@ -239,20 +239,18 @@ int main() {
 
     {
       for (int i = 0; i < 9; i++) {
-        screen[3*84 + 64 + i] |= dotted_circle[i];
-        screen[3*84 + 74 + i] |= dotted_circle[i];
+        screen[3*84 + 64 + i] |= circle[i];
+        screen[3*84 + 74 + i] |= circle[i];
       }
       // 3rd line: circle indicators for compass and acceleration
       // TODO: compass offset + tilt compensation
-      int cx = std::min(8, std::max(0, (80 + uistate.imu_state.mag_x +
-                                        1000) / 20));
-      int cy = std::min(7, std::max(0, (70 - uistate.imu_state.mag_z +
-                                        1000) / 20));
+      int cx = fmin(7, fmax(0, 3.5 + uistate.imu_state.N[2] / 75.0));
+      int cy = fmin(6, fmax(0, 3 + uistate.imu_state.N[0] / 75.0));
       screen[3*84 + 63 + cx] |= (3 << cy);
       screen[3*84 + 64 + cx] |= (3 << cy);
 
-      int ax = std::min(8, std::max(0, (80 + uistate.imu_state.accel_x) / 20));
-      int ay = std::min(7, std::max(0, (70 - uistate.imu_state.accel_y) / 20));
+      int ax = fmin(7, fmax(0, 3.5 + uistate.imu_state.g[2] / 20.0));
+      int ay = fmin(6, fmax(0, 3 + uistate.imu_state.g[0] / 20.0));
       screen[3*84 + 73 + ax] |= (3 << ay);
       screen[3*84 + 74 + ax] |= (3 << ay);
     }

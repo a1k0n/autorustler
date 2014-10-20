@@ -1,5 +1,5 @@
-#ifndef RADIO_H_
-#define RADIO_H_
+#ifndef CAR_RADIO_H_
+#define CAR_RADIO_H_
 
 #include "gpio/spi.h"
 
@@ -29,4 +29,4 @@ class RadioControl {
   SPIDev spi;
 };
 
-#endif  // RADIO_H_
+#endif  // CAR_RADIO_H_

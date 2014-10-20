@@ -22,7 +22,7 @@ int main() {
 
   signal(SIGINT, handle_sigint);
 
-  imu_init(i2cfd);
+  IMU imu(i2cfd);
   printf("# t gx gy gz mx my mz ax ay az steer throttle vbat\n");
 
   RadioControl rc;
@@ -32,12 +32,12 @@ int main() {
   }
 
   float vbat;
-  IMUState s;
+  IMURawState s;
   RCState rcstate;
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    imu_read(i2cfd, &s);
+    imu.ReadRaw(&s);
     if (!rc.GetRadioState(&rcstate)) {
       printf("retrying radio\n");
       rc.GetRadioState(&rcstate);

@@ -80,7 +80,7 @@ void* Recording::RecordingThreadThunk(void *self) {
 
 bool Recording::StartRecording() {
   char fname[1024];
-  const char tmpl[] = "/tmp/rustlerlog-XXXXXX";
+  const char tmpl[] = "/home/pi/rustlerlog-XXXXXX";
   memcpy(fname, tmpl, sizeof(tmpl));
   fd_ = mkstemp(fname);
   if (fd_ == -1) {
