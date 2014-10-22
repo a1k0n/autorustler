@@ -1,5 +1,19 @@
 DRAW_RPI = 1;
 
+module boss(od, id, height) {
+  difference() {
+    union() {
+      cylinder(h=height, d=od);
+      for (i = [0, 90, 180, 270]) {
+        rotate([90, 0, i])
+          linear_extrude(id/2, center=true)
+            polygon(points = [[od/2-2, 0], [od, 0], [od/2-2, od/2]]);
+      }
+    }
+    translate([0, 0, 1]) cylinder(h=height, d=id);
+  }
+}
+
 // all coordinates are in hundredths of an inch
 module batteryholder() {
   difference() {
@@ -32,19 +46,12 @@ module rpi_bosses(height = 18) {
   mm_l = 85;  // in mm
   mm_w = 56;
 
-  module boss(pos) {
-    translate(pos) {
-      difference() {
-        cylinder(h=height, d=6 / 0.254);
-        translate([0, 0, 2] / 0.254) cylinder(h=height, d=2 / 0.254);
-      }
-    }
-  }
-
   hole1 = [-mm_l/2 + 5, -mm_w/2 + 12.5, 0] / 0.254;
-  boss(hole1);
+  // 8.7 -> 0.087" is a decent drill size for tapping a #4-40 hole which seems
+  // to fit just fine
+  translate(hole1) boss(5/.254, 8.7, height);
   hole2 = [mm_l/2 - 25.5, mm_w/2 - 18, 0] / 0.254;
-  boss(hole2);
+  translate(hole2) boss(5/.254, 8.7, height);
 
   if (DRAW_RPI) {
     // rpi circuit board:
