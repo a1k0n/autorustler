@@ -1,4 +1,5 @@
 include <rpi.scad>
+include <traxxas.scad>
 
 DRAW_RPI = 1;
 
@@ -9,7 +10,7 @@ module boss(od, id, height) {
       cylinder(h=height, d=od, $fn=20);
       for (i = [0, 90, 180, 270]) {
         rotate([90, 0, i])
-          linear_extrude(id/2, center=true)
+          linear_extrude(2, center=true)
             polygon(points = [[od/2 - eps, 0], [od, 0], [od/2 - eps, height]]);
       }
     }
@@ -59,13 +60,30 @@ module rpi_bosses(height = 4) {
 }
 
 module platform1() {
-  h = 10;
-  translate([0, 0, h/2]) cube([500, 375, h], center=true);
+  h = 4;
+  // it's only 1mm thick, so add ridges
+  translate([0, 0, h/2])
+    cube([500, 375, h], center=true);
+  translate([0, 0, h+1]) {
+    for (i = [-1 : 1]) {
+      translate([125*i, 0, 0])
+        cube([8, 375, h*2], center=true);
+    }
+    cube([500, 8, h*2], center=true);
+  }
 }
 
 module platform2() {
-  h = 10;
-  translate([0, 0, h/2]) cube([475, 250, h], center=true);
+  h = 4;
+  translate([0, 0, h/2])
+    cube([475, 250, h], center=true);
+  translate([0, 0, h+1]) {
+    for (i = [-1 : 1]) {
+      translate([475*i/4, 0, 0])
+        cube([8, 250, h*2], center=true);
+    }
+    cube([475, 8, h*2], center=true);
+  }
   // raspberry pi mounting screw bosses
   translate([-20, 0, h]) rpi_bosses();
   // camera holder enclosure
@@ -73,14 +91,13 @@ module platform2() {
 
 // render with mm scale coordinates
 scale([.254, .254, .254]) {
-/*
-  rotate([180, 0, 0]) batteryholder();
+  *rotate([180, 0, 0]) batteryholder();
 
-  translate([0, -20 - 375/2, 75])
+  *translate([0, -20 - 375/2, 75])
     platform1();
 
-  translate([0, 20 + 50 + 300/2, 20])
+  *translate([0, 20 + 50 + 300/2, 20])
     platform2();
-*/
+
   platform2();
 }
