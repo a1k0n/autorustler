@@ -1,5 +1,8 @@
 // Raspberry Pi, in mm scale
 // origin is centered at bottom of board
+// most measurements are from my RPi own board with a dial calipers
+// others from
+// http://www.raspberrypi.org/raspberry-pi-rev2-template-with-mounting-holes/
 
 RPi_length = 85;
 RPi_width = 56;
@@ -30,8 +33,13 @@ module RPi() {
 
   pcb_h = 1.52;
 
-  // circuit board itself, with mounting holes
   translate([0,0,pcb_h/2]) {
+    // render sdcard first so it shows through the bottom
+    translate([RPi_length/2 + 2, -sdcard_center, -.76-1.05])
+      color([0, 0, 0, 0.5])
+        cube([32, 24, 2.1], center = true);
+
+    // circuit board itself, with mounting holes
     color([0, 0.4, 0, 0.5]) {
       difference() {
         cube([RPi_length, RPi_width, pcb_h], center = true);
@@ -41,9 +49,6 @@ module RPi() {
         }
       }
     }
-    translate([RPi_length/2 + 2, -sdcard_center, -.76-1.05])
-      color([0, 0, 0, 0.5])
-        cube([32, 24, 2.1], center = true);
   }
 
   // top & thru-hole components

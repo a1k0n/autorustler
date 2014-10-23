@@ -25,30 +25,33 @@ module boss(od, id, height) {
 module rpi_bosses(height = 4) {
   // 2.2mm is a decent drill size for tapping a #4-40 hole which seems
   // to fit just fine
+  slop = 0.3;
   clips = [
-    [-RPi_length/2 + 7, RPi_width/2],
-    [RPi_length/2 - 12, RPi_width/2],
-    [-RPi_length/2 + 7, -RPi_width/2],
-    [RPi_length/2 - 12, -RPi_width/2],
-    [-RPi_length/2, -RPi_width/2 + 12],
+    [-RPi_length/2 + 7, RPi_width/2 + 0.5, 4, 3],
+    [RPi_length/2 - 12, RPi_width/2 + 0.5, 4, 3],
+    [-RPi_length/2 + 7, -RPi_width/2 - 0.5, 4, 3],
+    [RPi_length/2 - 12, -RPi_width/2 - 0.5, 20, 3],
+    [-RPi_length/2 - 0.5, -RPi_width/2 + 12, 3, 4],
   ];
   pcb_h = 3;
   scale([1,1,1]/.254) {
     for (h = RPi_mounting_holes) {
+      // adding 0.02 height just so it's not totally coplanar with the pcb
+      // cutout subtracted below
       translate([h[0], h[1], 0])
-        boss(5, 2.2, height);
+        boss(5, 2.2, height+0.02);
     }
     difference() {
       for (c = clips) {
         translate([c[0], c[1], (height + pcb_h)/2])
-          cube([4, 4, height + pcb_h - 0.01], center=true);
+          cube([c[2], c[3], height + pcb_h - 0.01], center=true);
       }
       translate([0, 0, height + pcb_h/2])
-        cube([RPi_length, RPi_width, pcb_h], center=true);
+        cube([RPi_length + slop, RPi_width + slop, pcb_h], center=true);
     }
     if (DRAW_RPI) {
       // rpi circuit board:
-      %translate([0, 0, height]) {
+      %translate([0, 0, height + slop]) {
         RPi();
       }
     }
