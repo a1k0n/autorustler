@@ -35,5 +35,5 @@ bool StartCamera() {
     return 1;
   }
 
-  Camera::StartRecord(&r);
+  return Camera::StartRecord(&r);
 }

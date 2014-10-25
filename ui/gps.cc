@@ -46,12 +46,14 @@ void GPSUpdate(const sirf_navdata& data) {
 #endif
   uistate.gps_SVs = data.svs;
 
-  RecordHeader rh;
-  rh.Init(sizeof(data), RecordHeader::GPSFrame);
-  recording.StartWriting();
-  recording.Write(reinterpret_cast<const uint8_t*>(&rh), sizeof(rh));
-  recording.Write(reinterpret_cast<const uint8_t*>(&data), sizeof(data));
-  recording.StopWriting();
+  if (uistate.is_recording) {
+    RecordHeader rh;
+    rh.Init(sizeof(data), RecordHeader::GPSFrame);
+    recording.StartWriting();
+    recording.Write(reinterpret_cast<const uint8_t*>(&rh), sizeof(rh));
+    recording.Write(reinterpret_cast<const uint8_t*>(&data), sizeof(data));
+    recording.StopWriting();
+  }
 }
 
 void* GPSThread(void* data) {
