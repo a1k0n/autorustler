@@ -99,5 +99,7 @@ scale([.254, .254, .254]) {
   *translate([0, 20 + 50 + 300/2, 20])
     platform2();
 
-  platform2();
+  *platform2();
+
+  RPiCamera();
 }

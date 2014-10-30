@@ -147,10 +147,13 @@ void DrawLine(float x1, float y1, float x2, float y2,
       dy = -dy;
     }
     int x = x1;
-    float accum = 0;
     int y = y1;
+    // FIXME: interpolate to pixel center first
+    float accum = 0;
     y *= span;
-    for (; y <= y2; y += span) {
+    int yend = y2;
+    yend *= span;
+    for (; y <= yend; y += span) {
       buf[y + x] = color;
       accum += dx;
       if (accum >= dy) { accum -= dy; x++; }
@@ -195,12 +198,15 @@ void RenderFrame(uint32_t sec, uint32_t usec,
   const int maxlevel = 4;
   const int ws = 8;
 
-  if (!firstframe) {
+  if (!firstframe && !prevFeatures.empty()) {
     vector<uint8_t> status;
     vector<float> err;
     vector<cv::Point2f> out_points;
+    cv::TermCriteria termcrit(cv::TermCriteria::COUNT +
+                              cv::TermCriteria::EPS, 30, 0.01);
     calcOpticalFlowPyrLK(prevFrame, curFrame, prevFeatures, out_points,
-                         status, err, cv::Size(ws, ws), maxlevel);
+                         status, err, cv::Size(ws, ws), maxlevel,
+                         termcrit, cv::OPTFLOW_LK_GET_MIN_EIGENVALS);
     for (int i = 0; i < status.size(); i++) {
       if (!status[i]) continue;
       DrawLine(640 - prevFeatures[i].x * 2, 480 - prevFeatures[i].y * 2,
@@ -273,6 +279,7 @@ void RenderFrame(uint32_t sec, uint32_t usec,
   pixbuf[(40+100)*640 + 116+1] = 0xff000000;
   pixbuf[(40+1+100)*640 + 116] = 0xff000000;
   pixbuf[(40+1+100)*640 + 116+1] = 0xff000000;
+  DrawLine(ax+0.5, 40+ay+0.5, 116.5, 140.5, 0xff0000ff, 640, pixbuf);
   pixbuf[(40+ay)*640 + ax] = 0xff0000ff;
   pixbuf[(40+ay)*640 + ax+1] = 0xff0000ff;
   pixbuf[(40+1+ay)*640 + ax] = 0xff0000ff;
@@ -339,7 +346,7 @@ int main(int argc, char *argv[]) {
           SDL_Flip(screen);
           if (!Poll())
             return 0;
-          // SDL_Delay(50);
+          SDL_Delay(50);
         }
         break;
       case RecordHeader::IMUFrame:
@@ -358,10 +365,15 @@ int main(int argc, char *argv[]) {
         break;
       case RecordHeader::GPSFrame:
         {
+          float mph = sqrt(
+              gps_state.v8x*gps_state.v8x +
+              gps_state.v8y*gps_state.v8y +
+              gps_state.v8z*gps_state.v8z) * 0.279617;
+
           memcpy(&gps_state, yuvbuf, sizeof(gps_state));
-          fprintf(stderr, "%d %d %d %d %d %d\n",
+          fprintf(stderr, "%d %d %d %d %d %d %fmph\n",
                   gps_state.x, gps_state.y, gps_state.z,
-                  gps_state.v8x, gps_state.v8y, gps_state.v8z);
+                  gps_state.v8x, gps_state.v8y, gps_state.v8z, mph);
         }
     }
   }

@@ -12,6 +12,16 @@ RPi_mounting_holes = [
   [RPi_length/2 - 25.5, RPi_width/2 - 18]
 ];
 
+RPiCam_width = 25;
+RPiCam_height = 24;
+RPiCam_pcbdepth = 1;
+RPiCam_mounting_holes = [
+  [-RPiCam_width/2 + 2, RPiCam_height/2 - 2],
+  [ RPiCam_width/2 - 2, RPiCam_height/2 - 2],
+  [-RPiCam_width/2 + 2, -RPiCam_height/2 + 9.5],
+  [ RPiCam_width/2 - 2, -RPiCam_height/2 + 9.5],
+];
+
 module HeaderPair() {
   color("black", alpha = 0.7)
     translate([0, 0, 2.5/2])
@@ -75,6 +85,26 @@ module RPi() {
         cube([21.5, 16, 14.5]);
       translate([-RPi_length/2 + 33, RPi_width/2 - 12 + .65, 0])
         cube([15, 12, 6]);
+    }
+  }
+}
+
+module RPiCamera() {
+  // circuit board itself, with mounting holes
+  color([0, 0.4, 0, 0.7]) {
+    difference() {
+      cube([RPiCam_width, RPiCam_height, RPiCam_pcbdepth], center = true);
+      for (h = RPiCam_mounting_holes) {
+        translate(h)
+          cylinder(d = 2.2, h = 2, center = true, $fn = 20);
+      }
+    }
+  }
+  color([0, 0, 0, 0.7]) {
+    translate([0, -2.5, 2]) {
+      cube([8, 8, 4], center=true);
+      translate([0,0,1.4])
+        cylinder(d=7, h=2, $fn=20);
     }
   }
 }
