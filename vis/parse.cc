@@ -1,9 +1,62 @@
 #include <stdio.h>
+#include <vector>
+
+#include "opencv2/core/core.hpp"
+#include "fast/fast.h"
+#include "vikit/vision.h"
 
 #include "car/radio.h"
 #include "imu/imu.h"
 #include "gps/sirf.h"
 #include "ui/recording.h"
+
+using std::vector;
+
+void HandleFrame(uint8_t *buf, int w, int h) {
+  static cv::Mat prevFrame;
+  static vector<cv::Point2f> prevFeatures;
+  static bool firstframe = true;
+
+  const int maxlevel = 4;
+  const int ws = 4;
+
+  cv::Mat frame = cv::Mat(h, w, CV_8U, buf).clone();
+
+  if (!firstframe && !prevFeatures.empty()) {
+    vector<uint8_t> status;
+    vector<float> err;
+    vector<cv::Point2f> out_points;
+    calcOpticalFlowPyrLK(prevFrame, frame, prevFeatures, out_points,
+                         status, err, cv::Size(ws, ws), maxlevel);
+    int n = 0;
+    for (int i = 0; i < status.size(); i++) {
+      if (!status[i]) continue;
+      n++;
+      printf("%f,%f -> %f,%f %f\n", prevFeatures[i].x, prevFeatures[i].y,
+             out_points[i].x, out_points[i].y, err[i]);
+    }
+    printf("%d/%d points tracked\n", n, prevFeatures.size());
+  }
+
+  vector<fast::fast_xy> fast_corners;
+  int L = 0;  // find corners at bottom of pyramid
+
+  const int scale = 1 << L;
+  const int threshold = 40;
+  fast_corners.clear();
+  fast::fast_corner_detect_10_sse2(buf, w, h, w, threshold, fast_corners);
+
+  vector<int> scores, nm_corners;
+  fast::fast_corner_score_10(buf, w, fast_corners, threshold, scores);
+  fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
+  prevFeatures.clear();
+  for (int i = 0; i < nm_corners.size(); i++) {
+    const fast::fast_xy c = fast_corners[nm_corners[i]];
+    prevFeatures.push_back(cv::Point2f(c.x, c.y));
+  }
+  prevFrame = frame;
+  firstframe = false;
+}
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -40,6 +93,7 @@ int main(int argc, char *argv[]) {
     }
     switch (rh.recordtype) {
       case RecordHeader::VideoFrame:
+        HandleFrame(buf, 320, 240);
         break;
       case RecordHeader::IMUFrame:
         {
@@ -47,7 +101,7 @@ int main(int argc, char *argv[]) {
           RCState rc_state;
           memcpy(&imu_state, buf, sizeof(imu_state));
           memcpy(&rc_state, buf + sizeof(imu_state), sizeof(rc_state));
-          printf("imu/rc %d.%06d %d %d %d %d %d %d %d %d %d %d\n",
+          printf("imu/rc %d.%06d %d %d %d %d %d %d %d %d %d %d %d %d\n",
                  rh.ts_sec, rh.ts_usec,
                  imu_state.gyro_temp,
                  imu_state.gyro_x,
@@ -58,7 +112,9 @@ int main(int argc, char *argv[]) {
                  imu_state.mag_z,
                  imu_state.accel_x,
                  imu_state.accel_y,
-                 imu_state.accel_z);
+                 imu_state.accel_z,
+                 rc_state.throttle,
+                 rc_state.steering);
         }
         break;
       case RecordHeader::GPSFrame:

@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <algorithm>
 #include <vector>
@@ -108,17 +109,62 @@ void CalibrateCamera(const uint8_t *yuvbuf) {
   }
 }
 
+// y = dy/dx * x
+// y * dx = x * dy
+void DrawLine(float x1, float y1, float x2, float y2,
+              uint32_t color, int span, uint32_t *buf) {
+  if (y1 < 0 || y1 > 479) return;
+  if (y2 < 0 || y2 > 479) return;
+  if (x1 < 0 || x1 >= span) return;
+  if (x2 < 0 || x2 >= span) return;
+  float dx = x2 - x1;
+  float dy = y2 - y1;
+  if (fabs(dy) < fabs(dx)) {
+    // x-loop
+    if (x2 < x1) {
+      std::swap(x1, x2);
+      std::swap(y1, y2);
+      dx = -dx;
+      dy = -dy;
+    }
+    int y = y1;
+    y *= span;
+    float accum = 0;
+    for (int x = x1; x <= x2; x++) {
+      // if (y < 0 || y >= 640*480)
+      //   break;
+      buf[y + x] = color;
+      accum += dy;
+      if (accum >= dx) { accum -= dx; y += span; }
+      if (accum <= -dx) { accum += dx; y -= span; }
+    }
+  } else {
+    // y-loop
+    if (y2 < y1) {
+      std::swap(x1, x2);
+      std::swap(y1, y2);
+      dx = -dx;
+      dy = -dy;
+    }
+    int x = x1;
+    float accum = 0;
+    int y = y1;
+    y *= span;
+    for (; y <= y2; y += span) {
+      buf[y + x] = color;
+      accum += dx;
+      if (accum >= dy) { accum -= dy; x++; }
+      if (accum <= -dy) { accum += dy; x--; }
+    }
+  }
+}
+
 IMURawState imu_state;
 RCState rc_state;
 sirf_navdata gps_state;
 
 void RenderFrame(uint32_t sec, uint32_t usec,
                  const uint8_t *yuvbuf, SDL_Surface *frame) {
-#if 0
-  if (!calibrated) {
-    CalibrateCamera(yuvbuf);
-  }
-#endif
   uint32_t *pixbuf = reinterpret_cast<uint32_t*>(frame->pixels);
   for (int j = 0; j < 240; j++) {
     // the camera is rotated 180 degrees, so render it upside-down
@@ -140,92 +186,58 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     }
   }
 
-  const int n_pyr_levels = 3;
-  cv::Mat img_pyr[n_pyr_levels];
-  img_pyr[0] = cv::Mat(240, 320, CV_8U, const_cast<uint8_t*>(yuvbuf));
-  for (int i = 1; i < n_pyr_levels; i++) {
-    img_pyr[i] = cv::Mat(img_pyr[i-1].rows / 2, img_pyr[i-1].cols / 2, CV_8U);
-    vk::halfSample(img_pyr[i-1], img_pyr[i]);
-  }
+  static cv::Mat prevFrame;
+  static vector<cv::Point2f> prevFeatures;
+  static bool firstframe = true;
+  cv::Mat curFrame = cv::Mat(
+      240, 320, CV_8U, const_cast<uint8_t*>(yuvbuf)).clone();
 
-#if 0
-  // construct an opencv Mat
-  static vector<cv::KeyPoint> points(100);
-  // static cv::FastFeatureDetector fastdet(5);
-  points.clear();
+  const int maxlevel = 4;
+  const int ws = 8;
 
-  // put a green pixel on each keypoint
-  // fastdet.detect(uimage, points);
-  // use FAST-9
-  static int threshold = 20;
-  cv::FASTX(uimage, points, threshold, true,
-            cv::FastFeatureDetector::TYPE_9_16);
-  // if (points.size() > 240) threshold++;
-  // else if (points.size() < 120 && threshold > 3) threshold--;
-  for (size_t i = 0; i < points.size(); i++) {
-    int x = points[i].pt.x*2;
-    int y = points[i].pt.y*2;
-  }
-#endif
-
-#if 0
-  static struct {
-    float x, y, score;
-    bool has_corner;
-  } corners[120];
-  memset(corners, 0, sizeof(corners));
-
-  for (int L = 0; L < n_pyr_levels; L++) {
-    const int scale = 1<<L;
-    const int threshold = 15;
-    vector<fast::fast_xy> fast_corners;
-#if __SSE2__
-    fast::fast_corner_detect_10_sse2(
-        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
-        img_pyr[L].rows, img_pyr[L].cols, threshold, fast_corners);
-#else
-    fast::fast_corner_detect_10(
-        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
-        img_pyr[L].rows, img_pyr[L].cols, threshold, fast_corners);
-#endif
-
-    vector<int> scores, nm_corners;
-    fast::fast_corner_score_10(
-        (fast::fast_byte*) img_pyr[L].data, img_pyr[L].cols,
-        fast_corners, threshold, scores);
-    fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
-
-    for (int i = 0; i < nm_corners.size(); i++) {
-      float x = fast_corners[nm_corners[i]].x;
-      float y = fast_corners[nm_corners[i]].y;
-      // break into 32x20 grid cells, making a 10x12 grid
-      int k = ((int)(y * scale) / 20) * 10 + ((int)(x * scale) / 32);
-      const float score = vk::shiTomasiScore(img_pyr[L], x, y);
-      if (!corners[k].has_corner || score > corners[k].score) {
-        corners[k].x = x * scale;
-        corners[k].y = y * scale;
-        corners[k].score = score;
-        corners[k].has_corner = true;
-      }
+  if (!firstframe) {
+    vector<uint8_t> status;
+    vector<float> err;
+    vector<cv::Point2f> out_points;
+    calcOpticalFlowPyrLK(prevFrame, curFrame, prevFeatures, out_points,
+                         status, err, cv::Size(ws, ws), maxlevel);
+    for (int i = 0; i < status.size(); i++) {
+      if (!status[i]) continue;
+      DrawLine(640 - prevFeatures[i].x * 2, 480 - prevFeatures[i].y * 2,
+               640 - out_points[i].x * 2, 480 - out_points[i].y * 2,
+               0xff00cc00, 640, pixbuf);
     }
   }
 
-  int nkps = 0;
-  for (size_t i = 0; i < 120; i++) {
-    if (!corners[i].has_corner)
-      continue;
-    nkps++;
-    int x = corners[i].x * 2;
-    int y = corners[i].y * 2;
+  const int threshold = 40;
+  vector<fast::fast_xy> fast_corners;
+#if __SSE2__
+  fast::fast_corner_detect_10_sse2(
+      yuvbuf, 320, 240, 320, threshold, fast_corners);
+#else
+  fast::fast_corner_detect_10(
+      yuvbuf, 320, 240, 320, threshold, fast_corners);
+#endif
+
+  vector<int> scores, nm_corners;
+  fast::fast_corner_score_10(yuvbuf, 320, fast_corners, threshold, scores);
+  fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
+
+  prevFeatures.clear();
+  for (int i = 0; i < nm_corners.size(); i++) {
+    const fast::fast_xy c = fast_corners[nm_corners[i]];
+    prevFeatures.push_back(cv::Point2f(c.x, c.y));
+
+    int x = c.x * 2;
+    int y = c.y * 2;
     pixbuf[(480 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(480 - y) * 640 - x - 2] = 0xff00ff00;
     pixbuf[(480 - y) * 640 - x] = 0xff00ff00;
     pixbuf[(479 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(481 - y) * 640 - x - 1] = 0xff00ff00;
   }
-  printf("[%d.%06d] threshold %d %d keypoints\n", sec, usec,
-         20, nkps);
-#endif
+  prevFrame = curFrame;
+  firstframe = false;
 
   // draw indicators on the screen for various things
   // "zero" is 116
@@ -298,7 +310,6 @@ int main(int argc, char *argv[]) {
       SDL_SWSURFACE, 640, 480, 32,
       0x000000ff, 0x0000ff00, 0x00ff0000, 0xff000000);
 
-  int frameno = 0;
   memset(&imu_state, 0, sizeof(imu_state));
   memset(&rc_state, 0, sizeof(rc_state));
   memset(&gps_state, 0, sizeof(gps_state));
@@ -328,11 +339,13 @@ int main(int argc, char *argv[]) {
           SDL_Flip(screen);
           if (!Poll())
             return 0;
-          SDL_Delay(50);
+          // SDL_Delay(50);
         }
         break;
       case RecordHeader::IMUFrame:
         {
+          // really, i should have a 10Hz bandwidth filter here as IMU is
+          // sampled at 50Hz
           memcpy(&imu_state, yuvbuf, sizeof(imu_state));
           memcpy(&rc_state, yuvbuf + sizeof(imu_state), sizeof(rc_state));
 #if 0

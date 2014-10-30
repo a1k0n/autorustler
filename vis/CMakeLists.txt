@@ -13,6 +13,8 @@ INCLUDE_DIRECTORIES(${vikit_common_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(..)
 
 add_executable(parse parse.cc)
+target_link_libraries(parse ${OpenCV_LIBS} ${fast_LIBRARIES}
+  ${vikit_common_LIBRARIES})
 
 add_executable(vis vis.cc)
 target_link_libraries(vis ${SDL_LIBRARY}
