@@ -48,6 +48,7 @@ module servoholder() {
   l = 487 - 2*r;
   l1 = 175;
   l2 = 100;
+  color("gray") {
   translate([0,0,-17]) difference() {
     linear_extrude(17) minkowski() {
       polygon(points = [
@@ -57,15 +58,18 @@ module servoholder() {
     }
     translate([-l/2 - r - 0.1, -189/2, -0.1]) cube([15.1, 189, 17.2]);
     translate([-l/2 - r - 0.1, -61/2, -0.1]) cube([30.1, 61, 17.2]);
+    // 4mm (.16) holes .20 from the right edge, 1.34" apart
     translate([l/2 + r - 20, 134/2, 17]) m4flushscrew(h=20);
     translate([l/2 + r - 20, -134/2, 17]) m4flushscrew(h=20);
+    // 3mm (.12) holes .19 from the left edge, 2.53" apart
     translate([-l/2 - r + 19, 253/2, 17]) m3flushscrew(h=20);
     translate([-l/2 - r + 19, -253/2, 17]) m3flushscrew(h=20);
   }
+  // servo horn clearance bumps
   translate([-l/2 - r + 60, w1/2 + r - 75, -0.1]) cube([85,75,17.1]);
   translate([-l/2 - r + 60, -w1/2 - r, -0.1]) cube([85,75,17.1]);
+  // weird doohicky on the front
   translate([l/2 + r - 38 - 17, -48/2, -0.1]) cube([17, 48, 27.1]);
   translate([l/2 + r - 28 - 33, -12/2, -0.1]) cube([28, 12, 47.1]);
-
-  // 4mm (.16) holes .20 from the right edge, 1.34 apart
+  }
 }
