@@ -91,7 +91,8 @@ module platform2() {
 
 // render with mm scale coordinates
 scale([.254, .254, .254]) {
-  *rotate([180, 0, 0]) batteryholder();
+  *%rotate([180, 0, 0]) batteryholder();
+  *%translate([0, 50, -60]) battery();
 
   *translate([0, -20 - 375/2, 75])
     platform1();
@@ -99,7 +100,8 @@ scale([.254, .254, .254]) {
   *translate([0, 20 + 50 + 300/2, 20])
     platform2();
 
-  *platform2();
-
-  RPiCamera();
+  servoholder();
 }
+
+*%translate([0, 50, 40]) rotate([-90, 0, 0]) RPiCamera();
+
