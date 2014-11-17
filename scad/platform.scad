@@ -3,14 +3,14 @@ include <traxxas.scad>
 
 DRAW_RPI = 1;
 
-module boss(od, id, height) {
+module boss(od, id, height, w=8) {
   eps = id * 0.1;
   difference() {
     union() {
       cylinder(h=height, d=od, $fn=20);
       for (i = [0, 90, 180, 270]) {
         rotate([90, 0, i])
-          linear_extrude(2, center=true)
+          linear_extrude(w, center=true)
             polygon(points = [[od/2 - eps, 0], [od, 0], [od/2 - eps, height]]);
       }
     }
@@ -40,7 +40,7 @@ module rpi_bosses(height = 4) {
       // adding 0.02 height just so it's not totally coplanar with the pcb
       // cutout subtracted below
       translate([h[0], h[1], 0])
-        boss(5, 2.2, height+0.02);
+        boss(5, 2.2, height+0.02, 2);
     }
     difference() {
       for (c = clips) {
@@ -117,7 +117,10 @@ module alignplate() {
             [-487/2 + 19, -253/2]]);
       }
     }
-    translate([-250, -110, thick2]) cube([425, 220, thick - thick2 + 0.1]);
+    // thin the plate out where not necessary to be thick
+    translate([-250, -110, thick2]) cube([455, 220, thick - thick2 + 0.1]);
+    translate([200, -45, thick2]) cube([30, 90, thick - thick2 + 0.1]);
+
     // battery holder clearance
     translate([-487/2 - 0.1, -189/2, -0.1]) cube([15.1, 189, 17.2]);
     translate([-487/2 - 0.1, -61/2, -0.1]) cube([30.1, 61, 17.2]);
@@ -133,17 +136,38 @@ module alignplate() {
     translate([487/2 - 28 - 33, -12/2, -0.1]) cube([28, 12, 47.1]);
   }
   // mounting bosses for rpi chassis
-  translate([-487/2 + 22, 100, thick2]) boss(15, 8.9, 18 - thick2);
-  translate([-487/2 + 22, -100, thick2]) boss(15, 8.9, 18 - thick2);
-  translate([-487/2 + 22, 100, thick2]) boss(15, 8.9, 18 - thick2);
+  translate([-487/2 + 22, 100, thick2]) boss(15, 8.9, 15);
+  translate([-487/2 + 22, -100, thick2]) boss(15, 8.9, 15);
+  translate([-487/2 + 200, 0, thick2]) boss(15, 8.9, 15);
 
   // captive mounting for IMU, 22x17mm, .15" from base, board is .07" thick
   difference() {
-    translate([487/2 - 145, -108/2, thick2-0.1]) cube([78, 108, 25.1]);
+    translate([487/2 - 145, -98/2, thick2-0.1]) cube([74, 98, 25.1]);
     translate([487/2 - 146, -88/2, thick2+15]) cube([70, 88, 30]);
     translate([487/2 - 146, -83/2, thick2]) cube([67, 83, 20]);
   }
   translate([487/2 - 145 + 70 - 11, 88/2 - 13, thick2]) boss(15, 8.9, 15);
+
+  // raspberry pi camera mount
+  camheight = 40;  // camera is this many mm above platform
+  difference() {
+    translate([487/2 - 9, -55, thick2 - 0.1]) cube([8, 110, 45 + camheight/.254]);
+    translate([487/2 - 9, 0, (camheight - 2.5)/.254]) cube([8, 8, 8]/.24, center=true);
+  }
+  for (h = RPiCam_mounting_holes) {
+    translate([487/2 - 9, 0, camheight/.254])
+      rotate([-90, 180, 90]) translate(h / .254) boss(10, 6, 8, 5);
+  }
+  for (x = [-45, 45]) {
+    translate([487/2 - 3, x + 2.5, thick2 - 0.1])
+      rotate([90, 0, 0])
+        linear_extrude(5) {
+          polygon(points = [[-35, 0], [0, camheight/.254 - 40], [0, 0]]);
+        }
+  }
+
+  // draw camera board itself in previews
+  %scale(1/.254) translate([57, 0, camheight]) rotate([90, 0, 90]) RPiCamera();
 }
 
 // render with mm scale coordinates
@@ -154,14 +178,14 @@ scale([.254, .254, .254]) {
   *translate([0, -20 - 375/2, 75])
     platform1();
 
-  *translate([0, 20 + 50 + 300/2, 20])
+  //translate([0, 20 + 50 + 300/2, 20])
+  translate([0, -130, 20])
     platform2();
 
-  rotate([0, 0, -90]) {
+  rotate([0, 0, 90]) {
     alignplate();
-    *%servoholder();
+    %servoholder();
   }
 }
 
-*%translate([0, 50, 40]) rotate([-90, 0, 0]) RPiCamera();
 
