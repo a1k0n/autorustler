@@ -3,15 +3,15 @@ include <traxxas.scad>
 
 DRAW_RPI = 1;
 
-module boss(od, id, height, w=8) {
+module boss(od, id, height, sparwidth=8, sparlength=4) {
   eps = id * 0.1;
   difference() {
     union() {
       cylinder(h=height, d=od, $fn=20);
       for (i = [0, 90, 180, 270]) {
         rotate([90, 0, i])
-          linear_extrude(w, center=true)
-            polygon(points = [[od/2 - eps, 0], [od, 0], [od/2 - eps, height]]);
+          linear_extrude(sparwidth, center=true)
+            polygon(points = [[od/2 - eps, 0], [od/2 + sparlength, 0], [od/2 - eps, height]]);
       }
     }
     translate([0, 0, 1]) cylinder(h=height, d=id, $fn=20);
@@ -89,6 +89,71 @@ module platform2() {
   // camera holder enclosure
 }
 
+alignplate_thick = 18;
+alignplate_thick2 = 6;
+alignplate_radius = 24;
+module alignplate_shape() {
+  r = alignplate_radius;
+  linear_extrude(alignplate_thick) {
+    minkowski() {
+      circle(r=r);
+      polygon(points = [
+          [-Servoplate_width/2 + 19, 253/2],
+          [-Servoplate_width/2 + 50 - r, 114/2 - r],
+          [-Servoplate_width/2 + 165 - r, 114/2 - r],
+          [Servoplate_width/2 - 20, 134/2],
+          [Servoplate_width/2 - 20, -134/2],
+          [-Servoplate_width/2 + 165 - r, -114/2 + r],
+          [-Servoplate_width/2 + 50 - r, -114/2 + r],
+          [-Servoplate_width/2 + 19, -253/2]]);
+    }
+  }
+}
+
+module alignplate_base() {
+  overbore = 2;
+  r = alignplate_radius;
+  difference() {
+    alignplate_shape();
+    difference() {
+      // thin the plate out where not necessary to be thick, but leave a
+      // rigidity spar in the middle
+      union() {
+        translate([-250 - r, -110, alignplate_thick2])
+          cube([450 + r, 220, alignplate_thick - alignplate_thick2 + 0.1]);
+        translate([200, -45, alignplate_thick2])
+          cube([30, 90, alignplate_thick - alignplate_thick2 + 0.1]);
+      }
+      // spar for rigidity
+      translate([-Servoplate_width/2 + 30, -4, alignplate_thick2 - 0.1])
+        cube([Servoplate_width - 35, 8, 8]);
+    }
+
+    // battery holder clearance
+    translate([-Servoplate_width/2 - r - 0.1, -189/2, -0.1])
+      cube([15.1 + r, 189, 17.2]);
+    translate([-Servoplate_width/2 - r - 0.1, -61/2, -0.1])
+      cube([30.1 + r, 61, 17.2]);
+
+    // 4mm (.16) holes .20 from the right edge, 1.34" apart
+    translate([Servoplate_width/2 - 20, 134/2, alignplate_thick])
+      m4flushscrew(h=20);
+    translate([Servoplate_width/2 - 20, -134/2, alignplate_thick])
+      m4flushscrew(h=20);
+    // 3mm (.12) holes .19 from the left edge, 2.53" apart
+    translate([-Servoplate_width/2 + 19, 253/2, alignplate_thick])
+      m3flushscrew(h=20);
+    translate([-Servoplate_width/2 + 19, -253/2, alignplate_thick])
+      m3flushscrew(h=20);
+
+    // weird doohicky on the front
+    translate([Servoplate_width/2 - 38 - 17 - 8, -48/2 - 8, -0.1])
+      cube([17+ 16, 48+ 16, 27.1]);
+    translate([Servoplate_width/2 - 28 - 33 - 8, -12/2 - 8, -0.1])
+      cube([28+ 16, 12+ 16, 47.1]);
+  }
+}
+
 // the alignment plate screws onto the servo holder plate, and provides the
 // mounting base for all components and keeps everything pointing the right way
 module alignplate() {
@@ -99,67 +164,58 @@ module alignplate() {
   // we also need to keep clear of the battery / battery wires cutouts
   // the plate needs to be at least 3mm thick, as that's the depth of the
   // countersunk M4 screw cap heads on the right
-  r = 19;
-  thick = 12;
-  thick2 = 6;
+  overbore = 2;
+
   difference() {
-    linear_extrude(thick) {
-      minkowski() {
-        circle(r=r);
-        polygon(points = [
-            [-487/2 + 19, 253/2],
-            [-487/2 + 50 - r, 114/2 - r],
-            [-487/2 + 165 - r, 114/2 - r],
-            [487/2 - 20, 134/2],
-            [487/2 - 20, -134/2],
-            [-487/2 + 165 - r, -114/2 + r],
-            [-487/2 + 50 - r, -114/2 + r],
-            [-487/2 + 19, -253/2]]);
-      }
-    }
-    // thin the plate out where not necessary to be thick
-    translate([-250, -110, thick2]) cube([455, 220, thick - thick2 + 0.1]);
-    translate([200, -45, thick2]) cube([30, 90, thick - thick2 + 0.1]);
-
-    // battery holder clearance
-    translate([-487/2 - 0.1, -189/2, -0.1]) cube([15.1, 189, 17.2]);
-    translate([-487/2 - 0.1, -61/2, -0.1]) cube([30.1, 61, 17.2]);
-    // 4mm (.16) holes .20 from the right edge, 1.34" apart
-    translate([487/2 - 20, 134/2, thick]) m4flushscrew(h=20);
-    translate([487/2 - 20, -134/2, thick]) m4flushscrew(h=20);
-    // 3mm (.12) holes .19 from the left edge, 2.53" apart
-    translate([-487/2 + 19, 253/2, thick]) m3flushscrew(h=20);
-    translate([-487/2 + 19, -253/2, thick]) m3flushscrew(h=20);
-
-    // weird doohicky on the front
-    translate([487/2 - 38 - 17, -48/2, -0.1]) cube([17, 48, 27.1]);
-    translate([487/2 - 28 - 33, -12/2, -0.1]) cube([28, 12, 47.1]);
+    alignplate_base();
+    translate([Servoplate_width/2 - 50, -110, alignplate_thick2])
+      cube([Servoplate_width + 1, 220, alignplate_thick - alignplate_thick2 + 0.1]);
   }
+
   // mounting bosses for rpi chassis
-  translate([-487/2 + 22, 100, thick2]) boss(15, 8.9, 15);
-  translate([-487/2 + 22, -100, thick2]) boss(15, 8.9, 15);
-  translate([-487/2 + 200, 0, thick2]) boss(15, 8.9, 15);
+  translate([-Servoplate_width/2 + 22, 100, alignplate_thick2])
+    boss(24, 8.9 + overbore, 15, 8, 1);
+  translate([-Servoplate_width/2 + 22, -100, alignplate_thick2])
+    boss(24, 8.9 + overbore, 15, 8, 1);
+  translate([-Servoplate_width/2 + 200, 40, alignplate_thick2])
+    boss(24, 8.9 + overbore, 15);
+  translate([-Servoplate_width/2 + 200, -40, alignplate_thick2])
+    boss(24, 8.9 + overbore, 15);
 
   // captive mounting for IMU, 22x17mm, .15" from base, board is .07" thick
   difference() {
-    translate([487/2 - 145, -98/2, thick2-0.1]) cube([74, 98, 25.1]);
-    translate([487/2 - 146, -88/2, thick2+15]) cube([70, 88, 30]);
-    translate([487/2 - 146, -83/2, thick2]) cube([67, 83, 20]);
+    translate([Servoplate_width/2 - 145, -98/2, alignplate_thick2-0.1])
+      cube([74, 98, 25.1]);
+    translate([Servoplate_width/2 - 146, -88/2, alignplate_thick2+15])
+      cube([70, 88, 30]);
+    translate([Servoplate_width/2 - 146, -83/2, alignplate_thick2])
+      cube([67, 83, 20]);
   }
-  translate([487/2 - 145 + 70 - 11, 88/2 - 13, thick2]) boss(15, 8.9, 15);
+  translate([Servoplate_width/2 - 145 + 70 - 15, 88/2 - 13, alignplate_thick2])
+    boss(24, 8.9 + overbore, 15);
+}
 
+module cameramount() {
   // raspberry pi camera mount
+  overbore = 2;
+
+  intersection() {
+    alignplate_base();
+    translate([Servoplate_width/2 - 47, -110, alignplate_thick2 + 0.1])
+      cube([Servoplate_width + 1, 220, alignplate_thick - alignplate_thick2 + 0.1]);
+  }
+
   camheight = 40;  // camera is this many mm above platform
   difference() {
-    translate([487/2 - 9, -55, thick2 - 0.1]) cube([8, 110, 45 + camheight/.254]);
-    translate([487/2 - 9, 0, (camheight - 2.5)/.254]) cube([8, 8, 8]/.24, center=true);
+    translate([Servoplate_width/2 - 9, -55, alignplate_thick2 - 0.1]) cube([8, 110, 45 + camheight/.254]);
+    translate([Servoplate_width/2 - 9, 0, (camheight - 2.5)/.254]) cube([8, 8, 8]/.24, center=true);
   }
   for (h = RPiCam_mounting_holes) {
-    translate([487/2 - 9, 0, camheight/.254])
-      rotate([-90, 180, 90]) translate(h / .254) boss(10, 6, 8, 5);
+    translate([Servoplate_width/2 - 9, 0, camheight/.254])
+      rotate([-90, 180, 90]) translate(h / .254) boss(20, 6 + overbore, 8, 5, 1);
   }
   for (x = [-45, 45]) {
-    translate([487/2 - 3, x + 2.5, thick2 - 0.1])
+    translate([Servoplate_width/2 - 3, x + 2.5, alignplate_thick2 - 0.1])
       rotate([90, 0, 0])
         linear_extrude(5) {
           polygon(points = [[-35, 0], [0, camheight/.254 - 40], [0, 0]]);
@@ -167,7 +223,7 @@ module alignplate() {
   }
 
   // draw camera board itself in previews
-  %scale(1/.254) translate([57, 0, camheight]) rotate([90, 0, 90]) RPiCamera();
+  %scale(1/.254) translate([57.5, 0, camheight]) rotate([90, 0, 90]) RPiCamera();
 }
 
 // render with mm scale coordinates
@@ -179,12 +235,15 @@ scale([.254, .254, .254]) {
     platform1();
 
   //translate([0, 20 + 50 + 300/2, 20])
-  translate([0, -130, 20])
+  *translate([0, -130, 20])
     platform2();
 
   rotate([0, 0, 90]) {
     alignplate();
     %servoholder();
+  }
+  *rotate([0, 90, 90]) {
+    cameramount();
   }
 }
 

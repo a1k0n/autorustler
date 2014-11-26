@@ -32,20 +32,24 @@ module battery() {
 }
 
 module m4flushscrew(h) {
-  translate([0,0,-h-1]) cylinder(h=h+2, d=16);
-  translate([0,0,-12]) cylinder(h=12.1, r1=8, r2=16);
+  overbore = 2;
+  translate([0,0,-h-1]) cylinder(h=h+2, d=16 + overbore*2);
+  translate([0,0,-12]) cylinder(h=12.1, r1=8 + overbore, r2=16 + overbore);
 }
 
 module m3flushscrew(h) {
-  translate([0,0,-h-1]) cylinder(h=h+2, d=12);
-  translate([0,0,-8]) cylinder(h=8.1, r1=6, r2=12);
+  overbore = 2;
+  translate([0,0,-h-1]) cylinder(h=h+2, d=12 + overbore*2);
+  translate([0,0,-8]) cylinder(h=8.1, r1=6 + overbore, r2=12 + overbore);
 }
+
+Servoplate_width = 491;
 
 module servoholder() {
   r = 17;
   w1 = 287 - 2*r;
   w2 = 174 - 2*r;
-  l = 487 - 2*r;
+  l = Servoplate_width - 2*r;
   l1 = 175;
   l2 = 100;
   color("gray") {
