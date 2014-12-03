@@ -207,12 +207,12 @@ module cameramount() {
 
   camheight = 40;  // camera is this many mm above platform
   difference() {
-    translate([Servoplate_width/2 - 9, -55, alignplate_thick2 - 0.1]) cube([8, 110, 45 + camheight/.254]);
-    translate([Servoplate_width/2 - 9, 0, (camheight - 2.5)/.254]) cube([8, 8, 8]/.24, center=true);
+    translate([Servoplate_width/2 - 4, -55, alignplate_thick2 - 0.1]) cube([8, 110, 45 + camheight/.254]);
+    translate([Servoplate_width/2 - 4, 0, (camheight - 2.5)/.254]) cube([8, 8, 8]/.24, center=true);
   }
   for (h = RPiCam_mounting_holes) {
-    translate([Servoplate_width/2 - 9, 0, camheight/.254])
-      rotate([-90, 180, 90]) translate(h / .254) boss(20, 6 + overbore, 8, 5, 1);
+    translate([Servoplate_width/2 - 4, 0, camheight/.254])
+      rotate([-90, 180, 90]) translate(h / .254) boss(20, 6 + overbore, 12, 5, 1);
   }
   for (x = [-45, 45]) {
     translate([Servoplate_width/2 - 3, x + 2.5, alignplate_thick2 - 0.1])
@@ -223,7 +223,7 @@ module cameramount() {
   }
 
   // draw camera board itself in previews
-  %scale(1/.254) translate([57.5, 0, camheight]) rotate([90, 0, 90]) RPiCamera();
+  %scale(1/.254) translate([57.7, 0, camheight]) rotate([90, 0, 90]) RPiCamera();
 }
 
 // render with mm scale coordinates
@@ -238,11 +238,11 @@ scale([.254, .254, .254]) {
   *translate([0, -130, 20])
     platform2();
 
-  rotate([0, 0, 90]) {
+  *rotate([0, 0, 90]) {
     alignplate();
     %servoholder();
   }
-  *rotate([0, 90, 90]) {
+  rotate([0, 90, 90]) {
     cameramount();
   }
 }
