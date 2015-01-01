@@ -1,79 +1,72 @@
-// all coordinates are in hundredths of an inch
-module batteryholder() {
-  color("gray")
-  difference() {
-    union() {
-      linear_extrude(height = 7) {
-        difference() {
-          union () {
-            translate([-111.5, 0, 0]) circle(r = 20.5, $fn = 100);
-            translate([111.5, 0, 0]) circle(r = 20.5, $fn = 100);
-            square([223, 41], center = true);
-          }
-          translate([-111.5, 0, 0]) circle(r = 12, $fn=40);
-          translate([111.5, 0, 0]) circle(r = 12, $fn=40);
-        }
-      }
-      translate([0,0,10.4]) cube([189, 41, 7.2], center = true);
-    }
-    translate([0, 0, 10.4]) cube([52, 27, 7.4], center = true);
-    translate([-60, 0, 10.4]) cube([52, 27, 7.4], center = true);
-    translate([60, 0, 10.4]) cube([52, 27, 7.4], center = true);
-  }
-}
+include <fasteners.scad>
 
-module battery() {
-  color("red") rotate([90, 0, 0]) for (x = [-1, 1]) {
-    for (y = [0, 1, 2]) {
-      translate([x * 45, 0, y * (165 + 18)]) cylinder(165, d=88.5);
-    }
-    translate([0, 88.5*sqrt(3)/2, 165 + 18]) cylinder(165, d=88.5);
-  }
-}
+// all measurements in mm
+$overbore = 0.25;
+$fs = 0.2;
+$fa = 12;
 
-module m4flushscrew(h) {
-  overbore = 2;
-  translate([0,0,-h-1]) cylinder(h=h+2, d=16 + overbore*2);
-  translate([0,0,-12]) cylinder(h=12.1, r1=8 + overbore, r2=16 + overbore);
-}
+ServoPlateLength = 124;
+ServoPlateWidthL = 45;
+ServoPlateWidthR = 74;
 
-module m3flushscrew(h) {
-  overbore = 2;
-  translate([0,0,-h-1]) cylinder(h=h+2, d=12 + overbore*2);
-  translate([0,0,-8]) cylinder(h=8.1, r1=6 + overbore, r2=12 + overbore);
-}
+Servoplate_screws = [
+  [ServoPlateLength/2 - 5, -ServoPlateWidthL/2 + 5, 4],
+  [ServoPlateLength/2 - 5,  ServoPlateWidthL/2 - 5, 4],
+  [-ServoPlateLength/2 + 3.3 + 3/2, -ServoPlateWidthR/2 + 3.3 + 3/2, 3],
+  [-ServoPlateLength/2 + 3.3 + 3/2,  ServoPlateWidthR/2 - 3.3 - 3/2, 3]
+];
 
-Servoplate_width = 491;
+Servoplate_cutouts = [
+  [-ServoPlateLength/2 - 2, 48.0, 3.84 + 2],
+  [-ServoPlateLength/2 - 2, 15.5, 7.65 + 2]];
+
+Servoplate_doohicky = [
+  [ServoPlateLength/2 - 9.7, 4.3, 12.2, 6.88],
+  [ServoPlateLength/2 - 8.4, 7.1, 3, 11.96]];
+
+    // translate([l/2 + r - 9.7 - 4.3, -12.2/2, -0.1]) cube([4.3, 12.2, 6.88]);
+    // translate([l/2 + r - 7.1 - 8.4, -3/2, -0.1]) cube([7.1, 3, 11.96]);
 
 module servoholder() {
-  r = 17;
-  w1 = 287 - 2*r;
-  w2 = 174 - 2*r;
-  l = Servoplate_width - 2*r;
-  l1 = 175;
-  l2 = 100;
+  r = 4.3;
+  // TODO: verify these
+  w1 = ServoPlateWidthR - 2*r;
+  w2 = ServoPlateWidthL - 2*r;
+  l = ServoPlateLength - 2*r;
+  l1 = 44.5;
+  l2 = 25.4;
   color("gray") {
-  translate([0,0,-17]) difference() {
-    linear_extrude(17) minkowski() {
-      polygon(points = [
-          [-l/2, w1/2], [-l/2 + l1, w1/2], [l/2 - l2, w2/2], [l/2, w2/2],
-          [l/2, -w2/2], [l/2 - l2, -w2/2], [-l/2 + l1, -w1/2], [-l/2, -w1/2]]);
-      circle(r=r);
+    translate([0,0,-4.3]) difference() {
+      // outer polygon
+      linear_extrude(4.3) minkowski() {
+        polygon(points = [
+            [-l/2, w1/2], [-l/2 + l1, w1/2], [l/2 - l2, w2/2], [l/2, w2/2],
+            [l/2, -w2/2], [l/2 - l2, -w2/2], [-l/2 + l1, -w1/2], [-l/2, -w1/2]]);
+        circle(r=r);
+      }
+
+      // cutouts where battery goes in
+      for (c = Servoplate_cutouts) {
+        translate([c[0], -c[1]/2, -0.01]) cube([c[2], c[1], 4.4]);
+      }
+
+      // screw holes
+      for (h = Servoplate_screws) {
+        translate([h[0], h[1], 4.3]) {
+          if (h[2] == 3) m3flushscrew(h=20);
+          else m4flushscrew(h=20);
+        }
+      }
     }
-    translate([-l/2 - r - 0.1, -189/2, -0.1]) cube([15.1, 189, 17.2]);
-    translate([-l/2 - r - 0.1, -61/2, -0.1]) cube([30.1, 61, 17.2]);
-    // 4mm (.16) holes .20 from the right edge, 1.34" apart
-    translate([l/2 + r - 20, 134/2, 17]) m4flushscrew(h=20);
-    translate([l/2 + r - 20, -134/2, 17]) m4flushscrew(h=20);
-    // 3mm (.12) holes .19 from the left edge, 2.53" apart
-    translate([-l/2 - r + 19, 253/2, 17]) m3flushscrew(h=20);
-    translate([-l/2 - r + 19, -253/2, 17]) m3flushscrew(h=20);
-  }
-  // servo horn clearance bumps
-  translate([-l/2 - r + 60, w1/2 + r - 75, -0.1]) cube([85,75,17.1]);
-  translate([-l/2 - r + 60, -w1/2 - r, -0.1]) cube([85,75,17.1]);
-  // weird doohicky on the front
-  translate([l/2 + r - 38 - 17, -48/2, -0.1]) cube([17, 48, 27.1]);
-  translate([l/2 + r - 28 - 33, -12/2, -0.1]) cube([28, 12, 47.1]);
+
+    // servo horn clearance bumps
+    translate([-l/2 - r + 15.2, w1/2 + r - 19, -0.1]) cube([21.6, 19, 4.4]);
+    translate([-l/2 - r + 15.2, -w1/2 - r, -0.1]) cube([21.6, 19, 4.4]);
+
+    // weird doohicky on the front
+    for (d = Servoplate_doohicky) {
+      translate([d[0] - d[1], -d[2]/2, -0.1])
+        cube([d[1], d[2], d[3]]);
+    }
   }
 }
