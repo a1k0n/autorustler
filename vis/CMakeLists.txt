@@ -20,6 +20,6 @@ add_executable(vis vis.cc)
 target_link_libraries(vis ${SDL_LIBRARY}
   ${OpenCV_LIBS} ${fast_LIBRARIES} ${vikit_common_LIBRARIES})
 
-add_executable(tracktest tracktest.cc)
-target_link_libraries(tracktest ${SDL_LIBRARY}
-  ${OpenCV_LIBS} ${fast_LIBRARIES} ${vikit_common_LIBRARIES})
+#add_executable(tracktest tracktest.cc)
+#target_link_libraries(tracktest ${SDL_LIBRARY}
+#  ${OpenCV_LIBS} ${fast_LIBRARIES} ${vikit_common_LIBRARIES})
