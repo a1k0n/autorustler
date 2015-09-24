@@ -20,9 +20,10 @@ def exp(r):
         (1 - np.cos(theta)) * np.dot(K, K)
 
 
-# return Jacobian of exp(r_hat) * u
 def diff(r, R, u):
-    # R = exp(r) <- caller will already have this
+    """ return Jacobian of exp(r_hat) * u
+    R = exp(r) <- caller will already have this, so pass it in """
+    # derivation: http://arxiv.org/abs/1312.0788
     uhat = hat(u)
     rnorm = np.dot(r, r)
     if rnorm == 0:

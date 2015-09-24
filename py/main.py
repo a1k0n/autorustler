@@ -26,6 +26,32 @@ def GenPyramid(im, levels):
     return pyr
 
 
+# TODO: combine with code below and return both value and gradients
+def InterpolatedGradients(im, pts):
+    """ return linearly interpolated intensity values in im
+    for all points pts
+
+    pts is assumed to be ([1xn], [1xn]) tuple of y and x indices
+    """
+    ptsi = tuple(p.astype(np.int32) for p in pts)  # truncated integer part
+    ptsf = (pts[0] - ptsi[0], pts[1] - ptsi[1])  # fractional part
+
+    # bilinear weights
+    up = 1 - ptsf[0]
+    down = ptsf[0]
+    left = 1 - ptsf[1]
+    right = ptsf[1]
+
+    # image components
+    ul = im[ptsi]
+    ur = im[(ptsi[0], 1+ptsi[1])]
+    dl = im[(1+ptsi[0], ptsi[1])]
+    dr = im[(1+ptsi[0], 1+ptsi[1])]
+    return np.vstack((
+        left*(dl - ul) + right*(dr - ur),  # y gradient
+        up*(ur - ul) + down*(dr - dl)))    # x gradient
+
+
 def InterpolatedValues(im, pts):
     """ return linearly interpolated intensity values in im
     for all points pts
@@ -70,7 +96,6 @@ def MappablePoints(im):
 def w(px, py, d, r, T):
     R = so3.exp(r)
     X = np.dot(R, np.array([d * px, d * py, d])) + T
-    # print X, X[:2] / X[2]
     return X[:2] / X[2]
 
 
@@ -116,31 +141,108 @@ def test_dw(x, y, z, r, T):
     print 'numeric dw/dz', dwdd, '%f' % np.linalg.norm(dwdd - J[:, 6])
 
 
+def PlanePrior(siz):
+    D = np.ones(siz)
+    D[:siz[0]/2, :] *= 20
+    for i in range(siz[0]/2, siz[0]):
+        y = (i - siz[0]/2 + 1)
+        z = 20.0 / y
+        D[i, :] = z
+    return D
+
+
 def PhotometricError(iref, inew, R, T, points, D):
     # points is a tuple ([y], [x]); convert to homogeneous
     siz = iref.shape
     npoints = len(points[0])
     f = siz[1]  # focal length, FIXME
-    Xref = np.vstack(((points[1] - siz[1]*0.5) / f,
-                      (siz[0]*0.5 - points[0]) / f,
-                      np.ones(npoints))) * D
+    Xref = np.vstack(((points[1] - siz[1]*0.5) / f,  # x
+                      (siz[0]*0.5 - points[0]) / f,  # y (left->right hand)
+                      np.ones(npoints)))             # z = 1
     # this is confusingly written -- i am broadcasting the translation T to
     # every column, but numpy broadcasting only works if it's rows, hence all
     # the transposes
-    print Xref
-    Xnew = (np.dot(Xref.T, so3.exp(R)) + T).T
-    print Xnew
+    # print D * Xref
+    Xnew = (np.dot(so3.exp(R), (D * Xref)).T + T).T
+    # print Xnew
+    # right -> left hand projection
     proj = Xnew[0:2] / Xnew[2]
     p = (-proj[1]*f + siz[0]*0.5, proj[0]*f + siz[1]*0.5)
-    print points, p
-    inwindow_mask = ((p[0] >= 0) & (p[0] < siz[0]-1) &
-                     (p[1] >= 0) & (p[1] < siz[1]-1))
-    npts = sum(inwindow_mask)
-    print 'inwindow:', npts
+    margin = 10  # int(siz[0] / 5)
+    inwindow_mask = ((p[0] >= margin) & (p[0] < siz[0]-margin-1) &
+                     (p[1] >= margin) & (p[1] < siz[1]-margin-1))
+    npts_inw = sum(inwindow_mask)
+    if npts_inw < 10:
+        return 1e6, np.zeros(6 + npoints)
     # todo: filter points which are now out of the window
-    E = (InterpolatedValues(inew, (p[0][inwindow_mask], p[1][inwindow_mask])) -
-         iref[(points[0][inwindow_mask], points[1][inwindow_mask])])
-    return np.dot(E, E) / (npts - 1)
+    oldpointidxs = (points[0][inwindow_mask],
+                    points[1][inwindow_mask])
+    newpointidxs = (p[0][inwindow_mask], p[1][inwindow_mask])
+    origpointidxs = np.nonzero(inwindow_mask)[0]
+    E = InterpolatedValues(inew, newpointidxs) - iref[oldpointidxs]
+    # dE/dk ->
+    # d/dk r_p^2 = d/dk (Inew(w(r, T, D, p)) - Iref(p))^2
+    # = -2r_p dInew/dp dp/dw dw/dX dX/dk
+    # = -2r_p * g(w(r, T, D, p)) * dw(r, T, D, p)
+    # intensity gradients for each point
+    Ig = InterpolatedGradients(inew, newpointidxs)
+    # TODO: use tensors for this
+    # gradients for R, T, and D
+    gradient = np.zeros(6 + npoints)
+    for i in range(npts_inw):
+        # print 'newidx (y,x) = ', newpointidxs[0][i], newpointidxs[1][i]
+        # Jacobian of w
+        oi = origpointidxs[i]
+        Jw = dw(Xref[0][oi], Xref[1][oi], D[oi], R, T)
+        # scale back up into pixel space, right->left hand coords to get
+        # Jacobian of p
+        Jp = f * np.vstack((-Jw[1], Jw[0]))
+        # print origpointidxs[i], 'Xref', Xref[:, i], 'Ig', Ig[:, i], \
+        #     'dwdRz', Jw[:, 2], 'dpdRz', Jp[:, 2]
+        # full Jacobian = 2*E + Ig * Jp
+        J = np.sign(E[i]) * np.dot(Ig[:, i], Jp)
+        # print '2 E[i]', 2*E[i], 'Ig*Jp', np.dot(Ig[:, i], Jp)
+        gradient[:6] += J[:6]
+        # print J[:6]
+        gradient[6+origpointidxs[i]] += J[6]
+
+    print R, T, np.sum(np.abs(E)), npts_inw
+    # return ((0.2*(npoints - npts_inw) + np.dot(E, E)), gradient)
+    return np.sum(np.abs(E)) / (npts_inw), gradient / (npts_inw)
+    # return np.dot(E, E), gradient
+
+
+def test_PhotometricError(iref, inew, R, T, points, D):
+    h = 1e-7
+    hh = 1.0 / h
+    E0, g0 = PhotometricError(iref, inew, R, T, points, D)
+    Erx, Ery, Erz = 0, 0, 0
+    Erx = hh * (PhotometricError(
+        iref, inew, R + np.array([h, 0, 0]), T, points, D)[0] - E0)
+    Ery = hh * (PhotometricError(
+        iref, inew, R + np.array([0, h, 0]), T, points, D)[0] - E0)
+    Erz = hh * (PhotometricError(
+        iref, inew, R + np.array([0, 0, h]), T, points, D)[0] - E0)
+
+    Etx = hh * (PhotometricError(
+        iref, inew, R, T + np.array([h, 0, 0]), points, D)[0] - E0)
+    Ety = hh * (PhotometricError(
+        iref, inew, R, T + np.array([0, h, 0]), points, D)[0] - E0)
+    Etz = hh * (PhotometricError(
+        iref, inew, R, T + np.array([0, 0, h]), points, D)[0] - E0)
+
+    n = np.nonzero(g0[6:])[0][0]
+    print 'nonzero point', n
+    D[n] += h
+    Ed = hh * (PhotometricError(iref, inew, R, T, points, D)[0] - E0)
+
+    print 'E', E0, 'g:', g0[:7]
+    print 'numerical gR: (%f %f %f)' % (Erx, Ery, Erz)
+    print 'numerical gT: (%f %f %f)' % (Etx, Ety, Etz)
+    print 'numerical D: %f' % Ed
+    print 'Error_R: (%f %f %f)' % (Erx - g0[0], Ery - g0[1], Erz - g0[2])
+    print 'Error_T: (%f %f %f)' % (Etx - g0[3], Ety - g0[4], Etz - g0[5])
+    print 'Error_D:', (Ed - g0[6 + n])
 
 
 def LoadExampleFrames():
