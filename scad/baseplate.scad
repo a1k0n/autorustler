@@ -1,20 +1,42 @@
 include <fasteners.scad>
 include <traxxas.scad>
 
-module baseplate() {
+$overbore = 0.25;
+
+// All screws are #4-40, 2.2606 internal diameter
+BasePlateMountingScrews = [
+  [-55, 20], [-55, -20],
+  [-30, 10], [-30, -10]
+];
+
+module IMUMount() {
+  // dimensions of 9DOF PCB
+  width = 22.1;
+  length = 16.85;
+  depth = 1.66;  // PCB is 1.66mm thick or so
+  height = 3;  // stand off 3mm
+}
+
+module BasePlate() {
   thick = 2;
   difference() {
-    linear_extrude(thick) minkowski() {
-      polygon(points = [
-          [Servoplate_screws[0][0], Servoplate_screws[0][1]],
-          [40, -0.1],
-          [-50, -0.1],
-          [Servoplate_screws[2][0], Servoplate_screws[2][1]],
-          [Servoplate_screws[3][0], Servoplate_screws[3][1]],
-          [-50, 0.1],
-          [40, 0.1],
-          [Servoplate_screws[1][0], Servoplate_screws[1][1]]]);
-      circle(r=5);
+    union() {
+      linear_extrude(thick) minkowski() {
+        polygon(points = [
+            [Servoplate_screws[0][0], Servoplate_screws[0][1]],
+            [40, -10],
+            [-55, -10],
+            [Servoplate_screws[2][0], Servoplate_screws[2][1]],
+            [Servoplate_screws[3][0], Servoplate_screws[3][1]],
+            [-55, 10],
+            [40, 10],
+            [Servoplate_screws[1][0], Servoplate_screws[1][1]]]);
+        circle(r=5);
+      }
+      for (h = BasePlateMountingScrews) {
+        translate([h[0], h[1], thick-0.1])
+          cylinder(d=5, h=5);
+      }
     }
 
     for (c = Servoplate_cutouts) {
@@ -33,8 +55,13 @@ module baseplate() {
         else m4flushscrew(h=20);
       }
     }
+
+    for (h = BasePlateMountingScrews) {
+      translate([h[0], h[1], -0.1])
+        cylinder(d=2.2606 + $overbore, h=thick+20);
+    }
   }
 }
 
 translate([0,0,-0.01]) %servoholder();
-baseplate();
+BasePlate();
