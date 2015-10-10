@@ -1,14 +1,14 @@
 import parse
 import so3
 import matplotlib.pyplot as plt
-import numpy as np
-# import theano.tensor as T
+import autograd.numpy as np
 
-GRAD_THRESHOLD = 0.01
+GRAD_THRESHOLD = 0.02
 
 
 def GammaCorrect(im):
-    return np.power(im * (1.0 / 255.0), 2.2)
+    # return np.power(im * (1.0 / 255.0), 2.2)
+    return im * (1.0 / 255.0)
 
 
 def GenPyramid(im, levels):
@@ -87,10 +87,10 @@ def MappablePoints(im):
     gx = im[:-1, 1:] - im[:-1, :-1]
     mask = gx*gx + gy*gy > GRAD_THRESHOLD
     # smear down
-    mask[1:, :] |= mask[:-1, :]
+    mask[1:, :] = mask[1:, :] + mask[:-1, :]
     # smear right
-    mask[:, 1:] |= mask[:, :-1]
-    return np.nonzero(mask)
+    mask[:, 1:] = mask[:, 1:] + mask[:, :-1]
+    return mask
 
 
 def w(px, py, d, r, T):
@@ -246,16 +246,111 @@ def test_PhotometricError(iref, inew, R, T, points, D):
 
 
 def LoadExampleFrames():
+    """ Load example frames, where we can assume there was just Z movement, one
+    unit forward"""
     frames = parse.ParseLog(open('../rustlerlog-BMPauR'))
-    for i in range(90):
+    for i in range(320):
         frames.next()
-    im1 = GammaCorrect(frames.next())
-    im2 = GammaCorrect(frames.next())
-    return im1, im2
+    f = (None,)
+    imu = None
+    while f[0] != 'img':
+        imu = f
+        f = frames.next()
+    im1 = GammaCorrect(f[2])
+    f = (None,)
+    while f[0] != 'img':
+        f = frames.next()
+    im2 = GammaCorrect(f[2])
+    return im1, im2, imu
+
+
+def GetVideoTimeSeries():
+    TS = []
+    VIS_RY = []
+    VIS_RX = []
+    t0 = None
+    lasthsum = None
+    lastvsum = None
+    hprior, vprior = 0, 0
+    for msg in parse.ParseLog(open('../rustlerlog-BMPauR')):
+        if msg[0] == 'img':
+            _, ts, im = msg
+            im = GammaCorrect(im)
+            hsum = np.sum(im, axis=0)
+            hsum -= np.mean(hsum)
+            vsum = np.sum(im, axis=1)
+            vsum -= np.mean(vsum)
+            if t0 is None:
+                t0 = ts
+                lasthsum = hsum
+                lastvsum = vsum
+            hoffset = np.argmax(
+                -2*np.arange(-80 - hprior, 81 - hprior)**2 +
+                np.correlate(lasthsum, hsum[80:-80], mode='valid')) - 80
+            voffset = np.argmax(
+                -2*np.arange(-60 - vprior, 61 - vprior)**2 +
+                np.correlate(lastvsum, vsum[60:-60], mode='valid')) - 60
+            TS.append(ts - t0)
+            VIS_RY.append(hoffset)
+            VIS_RX.append(voffset)
+            hprior, vprior = hoffset, voffset
+            lasthsum = hsum
+            lastvsum = vsum
+    return TS, VIS_RY, VIS_RX
+
+
+def GetTimeSeries():
+    TS = []
+    ERR = []
+    GYRO = []
+    ACCEL = []
+    lastim = None
+    t0 = None
+    for msg in parse.ParseLog(open('../rustlerlog-BMPauR')):
+        if msg[0] == 'img':
+            _, ts, im = msg
+            if t0 is None:
+                t0 = ts
+            im = GammaCorrect(im)
+            if lastim is not None:
+                TS.append(ts - t0)
+                ERR.append(np.sum(np.abs(lastim-im)) / (320*240))
+                GYRO.append(GYRO[-1])
+                ACCEL.append(ACCEL[-1])
+            lastim = im
+        elif msg[0] == 'imu':
+            _, ts, gyro, mag, accel = msg
+            if t0 is None:
+                t0 = ts
+            TS.append(ts - t0)
+            GYRO.append(gyro)
+            ACCEL.append(accel)
+            if len(ERR):
+                ERR.append(ERR[-1])
+            else:
+                ERR.append(0)
+    return np.array(TS), np.array(ERR), np.array(GYRO), np.array(ACCEL)
+
+
+def Track():
+    # procedure:
+    #  - get all time series data
+    #  - use stationary data (classified by image not moving) to find
+    #    gyro/accel bias, etc
+    #    - gyro temp compensation also
+    #  - predict camera movement via IMU measurements
+    #  - use feature point tracking visual odometry initialized by previous
+    #    estimate depth of each feature point
+    #  - iterate to refine camera pose / keypoint depth
+    #  - feed back into kalman filter
+    
+    # later, introduce motion model from throttle/steering input measurements
+    # into kalman filter, see if we can get less error
+    pass
 
 
 def main():
-    im1, im2 = LoadExampleFrames()
+    im1, im2, _ = LoadExampleFrames()
     pyr1 = GenPyramid(im1, 5)
     pyr2 = GenPyramid(im2, 5)
 
