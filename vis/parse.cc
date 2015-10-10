@@ -1,9 +1,11 @@
 #include <stdio.h>
+#include <string.h>
+#include <iostream>
 #include <vector>
 
 #include "opencv2/core/core.hpp"
-#include "fast/fast.h"
-#include "vikit/vision.h"
+#include "opencv2/features2d/features2d.hpp"
+#include "flann/flann.hpp"
 
 #include "car/radio.h"
 #include "imu/imu.h"
@@ -12,50 +14,41 @@
 
 using std::vector;
 
+cv::BRISK detector_;
+
+struct kp {
+  int frame;
+  cv::KeyPoint uv;
+  uint8_t desc[64];
+
+  kp() {}
+  kp(int frame, const cv::KeyPoint& uv, uint8_t* d): frame(frame), uv(uv) {
+    memcpy(desc, d, 64);
+  }
+};
+
+vector<kp> keypoints_;
+
 void HandleFrame(uint8_t *buf, int w, int h) {
-  static cv::Mat prevFrame;
-  static vector<cv::Point2f> prevFeatures;
-  static bool firstframe = true;
-
-  const int maxlevel = 4;
-  const int ws = 4;
-
-  cv::Mat frame = cv::Mat(h, w, CV_8U, buf).clone();
-
-  if (!firstframe && !prevFeatures.empty()) {
-    vector<uint8_t> status;
-    vector<float> err;
-    vector<cv::Point2f> out_points;
-    calcOpticalFlowPyrLK(prevFrame, frame, prevFeatures, out_points,
-                         status, err, cv::Size(ws, ws), maxlevel);
-    int n = 0;
-    for (int i = 0; i < status.size(); i++) {
-      if (!status[i]) continue;
-      n++;
-      printf("%f,%f -> %f,%f %f\n", prevFeatures[i].x, prevFeatures[i].y,
-             out_points[i].x, out_points[i].y, err[i]);
-    }
-    printf("%d/%d points tracked\n", n, prevFeatures.size());
+  static int frameno = -1;
+  frameno++;
+  cv::Mat frame = cv::Mat(h, w, CV_8U, buf);
+  vector<cv::KeyPoint> keypts;
+  cv::Mat descriptors;
+  detector_(frame, cv::noArray(), keypts, descriptors);
+#if 0
+  printf("%lu keypts %d x %d descriptor\n", keypts.size(),
+         descriptors.rows, descriptors.cols);
+#endif
+  for (int i = 0; i < keypts.size(); i++) {
+    keypoints_.push_back(kp(frameno, keypts[i], &descriptors.data[64*i]));
+#if 0
+    printf("%d %f %f ", frameno, keypts[i].pt.x, keypts[i].pt.y);
+    for (int j = 0; j < 64; j++)
+      printf("%02x", descriptors.data[64*i + j]);
+    printf("\n");
+#endif
   }
-
-  vector<fast::fast_xy> fast_corners;
-  int L = 0;  // find corners at bottom of pyramid
-
-  const int scale = 1 << L;
-  const int threshold = 40;
-  fast_corners.clear();
-  fast::fast_corner_detect_10_sse2(buf, w, h, w, threshold, fast_corners);
-
-  vector<int> scores, nm_corners;
-  fast::fast_corner_score_10(buf, w, fast_corners, threshold, scores);
-  fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
-  prevFeatures.clear();
-  for (int i = 0; i < nm_corners.size(); i++) {
-    const fast::fast_xy c = fast_corners[nm_corners[i]];
-    prevFeatures.push_back(cv::Point2f(c.x, c.y));
-  }
-  prevFrame = frame;
-  firstframe = false;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,6 +90,7 @@ int main(int argc, char *argv[]) {
         break;
       case RecordHeader::IMUFrame:
         {
+#if 1
           IMURawState imu_state;
           RCState rc_state;
           memcpy(&imu_state, buf, sizeof(imu_state));
@@ -115,10 +109,12 @@ int main(int argc, char *argv[]) {
                  imu_state.accel_z,
                  rc_state.throttle,
                  rc_state.steering);
+#endif
         }
         break;
       case RecordHeader::GPSFrame:
         {
+#if 0
           sirf_navdata gps_state;
           memcpy(&gps_state, buf, sizeof(gps_state));
           printf("gps %d.%06d %d %d %d %d %d %d %d %d\n",
@@ -126,9 +122,62 @@ int main(int argc, char *argv[]) {
                  gps_state.x, gps_state.y, gps_state.z,
                  gps_state.v8x, gps_state.v8y, gps_state.v8z,
                  gps_state.hdop, gps_state.svs);
+#endif
         }
     }
   }
+
+#if 0
+  flann::Logger::setLevel(flann::FLANN_LOG_DEBUG);
+  const int nkp = keypoints_.size();
+  fprintf(stderr, "# creating flann index with %d keypoints...\n", nkp);
+  flann::Matrix<uint8_t> descmatrix(new uint8_t[nkp * 64], nkp, 64);
+  for (int i = 0; i < nkp; i++) {
+    memcpy(descmatrix[i], keypoints_[i].desc, 64);
+    if (i < 50) {
+      printf("%d ", i);
+      for (int j = 0; j < 64; j++)
+        printf("%02x", keypoints_[i].desc[j]);
+      printf(" %d %0.0f %0.0f\n",
+             keypoints_[i].frame,
+             keypoints_[i].uv.pt.x, keypoints_[i].uv.pt.y);
+    }
+  }
+#if 0
+  flann::Index<flann::Hamming<uint8_t> >
+      ann_idx_(descmatrix, flann::HierarchicalClusteringIndexParams());
+  ann_idx_.buildIndex();
+  fprintf(stderr, "# saving flann index...\n");
+  ann_idx_.save("index.flann");
+
+  int nns = 128;
+  vector<vector<size_t> > indices;
+  vector<vector<flann::Index<flann::Hamming<uint8_t> >::DistanceType> > dists;
+  flann::Matrix<uint8_t> query(keypoints_[4].desc, 1, 64);
+  ann_idx_.knnSearch(query, indices, dists, nns, flann::SearchParams(128));
+  for (int i = 0; i < indices[0].size(); i++) {
+    int k = indices[0][i];
+    printf("%d ", k);
+    for (int j = 0; j < 64; j++)
+      printf("%02x", keypoints_[k].desc[j]);
+    printf(" %d %d %0.0f %0.0f\n", dists[0][i],
+           keypoints_[k].frame,
+           keypoints_[k].uv.pt.x, keypoints_[k].uv.pt.y);
+  }
+#else
+  const int maxcenters = 128;
+  flann::Matrix<uint8_t> centers(new uint8_t[maxcenters * 64], maxcenters, 64);
+  int ncenters = flann::hierarchicalClustering(
+      descmatrix, centers, flann::KMeansIndexParams(),
+      flann::Hamming<uint8_t>());
+  for (int i = 0; i < ncenters; i++) {
+    printf("%d ", i);
+    for (int j = 0; j < 64; j++)
+      printf("%02x", centers[i][j]);
+    printf("\n");
+  }
+#endif
+#endif
 
   return 0;
 }

@@ -9,8 +9,7 @@
 #include "opencv2/core/core.hpp"
 #include "opencv2/core/core_c.h"
 #include "opencv2/imgproc/imgproc_c.h"
-#include "fast/fast.h"
-#include "vikit/vision.h"
+#include "opencv2/features2d/features2d.hpp"
 
 #include "car/radio.h"
 #include "imu/imu.h"
@@ -35,131 +34,6 @@ bool Poll() {
     }
   }
   return true;
-}
-
-bool calibrated = false;
-void CalibrateCamera(const uint8_t *yuvbuf) {
-  static int corner_timer = 3;
-  static int calib_success = 0;
-  const int board_w = 5;
-  const int board_h = 8;
-  const int board_n = board_w * board_h;
-  const int n_boards = 32;
-  static CvMat* image_points = cvCreateMat(n_boards * board_n, 2, CV_32FC1);
-  static CvMat* object_points = cvCreateMat(n_boards * board_n, 3, CV_32FC1);
-  static CvMat* point_counts = cvCreateMat(n_boards, 1, CV_32SC1);
-
-  IplImage *image = cvCreateImage(cvSize(320, 240), IPL_DEPTH_8U, 1);
-  cvSetData(image, const_cast<uint8_t*>(yuvbuf), 320);
-  CvPoint2D32f corners[board_n];
-  int corner_count = 0;
-  CvSize board_sz = cvSize(board_w, board_h);
-  int found = cvFindChessboardCorners(
-      image, board_sz, corners, &corner_count,
-      CV_CALIB_CB_ADAPTIVE_THRESH | CV_CALIB_CB_FILTER_QUADS);
-  printf("found: %d corner_count: %d\n", found, corner_count);
-  cvFindCornerSubPix(
-      image, corners, corner_count, cvSize(11, 11),
-      cvSize(-1, -1),
-      cvTermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 30, 0.1));
-  cvDrawChessboardCorners(image, board_sz, corners, corner_count, found);
-
-  if (corner_count == board_n) {
-    corner_timer--;
-    if (corner_timer <= 0) {
-      corner_timer = 8;
-      // add corners to matrix
-      printf("adding calibration points %d\n", calib_success);
-      int step = calib_success * board_n;
-      for (int i = step, j = 0; j < corner_count; i++, j++) {
-        CV_MAT_ELEM(*image_points, float, i, 0) = corners[j].x;
-        CV_MAT_ELEM(*image_points, float, i, 1) = corners[j].y;
-        CV_MAT_ELEM(*object_points, float, i, 0) = j/board_w;
-        CV_MAT_ELEM(*object_points, float, i, 1) = j%board_w;
-        CV_MAT_ELEM(*object_points, float, i, 2) = 0.0f;
-      }
-      CV_MAT_ELEM(*point_counts, int, calib_success, 0) = board_n;
-      calib_success++;
-    }
-  }
-
-  if (calib_success == n_boards) {
-    CvMat* intrinsic_matrix = cvCreateMat(3, 3, CV_32FC1);
-    CvMat* distortion_coeffs = cvCreateMat(5, 1, CV_32FC1);
-    // At this point we have all the chessboard corners we need
-    // Initiliazie the intrinsic matrix such that the two focal lengths
-    // have a ratio of 1.0
-
-    CV_MAT_ELEM(*intrinsic_matrix, float, 0, 0) = 1.0;
-    CV_MAT_ELEM(*intrinsic_matrix, float, 1, 1) = 1.0;
-
-    // Calibrate the camera
-    double err = cvCalibrateCamera2(
-        object_points, image_points, point_counts,
-        cvGetSize(image),
-        intrinsic_matrix, distortion_coeffs, NULL, NULL,
-        CV_CALIB_FIX_ASPECT_RATIO);
-
-    // Save the intrinsics and distortions
-    cvSave("intrinsics.yaml", intrinsic_matrix);
-    cvSave("distortion.yaml", distortion_coeffs);
-    fprintf(stderr, "calibrated, reconstruction error %f\n", err);
-
-    calibrated = true;
-  }
-}
-
-// y = dy/dx * x
-// y * dx = x * dy
-void DrawLine(float x1, float y1, float x2, float y2,
-              uint32_t color, int span, uint32_t *buf) {
-  if (y1 < 0 || y1 > 479) return;
-  if (y2 < 0 || y2 > 479) return;
-  if (x1 < 0 || x1 >= span) return;
-  if (x2 < 0 || x2 >= span) return;
-  float dx = x2 - x1;
-  float dy = y2 - y1;
-  if (fabs(dy) < fabs(dx)) {
-    // x-loop
-    if (x2 < x1) {
-      std::swap(x1, x2);
-      std::swap(y1, y2);
-      dx = -dx;
-      dy = -dy;
-    }
-    int y = y1;
-    y *= span;
-    float accum = 0;
-    for (int x = x1; x <= x2; x++) {
-      // if (y < 0 || y >= 640*480)
-      //   break;
-      buf[y + x] = color;
-      accum += dy;
-      if (accum >= dx) { accum -= dx; y += span; }
-      if (accum <= -dx) { accum += dx; y -= span; }
-    }
-  } else {
-    // y-loop
-    if (y2 < y1) {
-      std::swap(x1, x2);
-      std::swap(y1, y2);
-      dx = -dx;
-      dy = -dy;
-    }
-    int x = x1;
-    int y = y1;
-    // FIXME: interpolate to pixel center first
-    float accum = 0;
-    y *= span;
-    int yend = y2;
-    yend *= span;
-    for (; y <= yend; y += span) {
-      buf[y + x] = color;
-      accum += dx;
-      if (accum >= dy) { accum -= dy; x++; }
-      if (accum <= -dy) { accum += dy; x--; }
-    }
-  }
 }
 
 IMURawState imu_state;
@@ -189,47 +63,10 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     }
   }
 
-  static cv::Mat prevFrame;
-  static vector<cv::Point2f> prevFeatures;
-  static bool firstframe = true;
   cv::Mat curFrame = cv::Mat(
       240, 320, CV_8U, const_cast<uint8_t*>(yuvbuf)).clone();
 
-  const int maxlevel = 4;
-  const int ws = 8;
-
-  if (!firstframe && !prevFeatures.empty()) {
-    vector<uint8_t> status;
-    vector<float> err;
-    vector<cv::Point2f> out_points;
-    cv::TermCriteria termcrit(cv::TermCriteria::COUNT +
-                              cv::TermCriteria::EPS, 30, 0.01);
-    calcOpticalFlowPyrLK(prevFrame, curFrame, prevFeatures, out_points,
-                         status, err, cv::Size(ws, ws), maxlevel,
-                         termcrit);
-    for (int i = 0; i < status.size(); i++) {
-      if (!status[i]) continue;
-      DrawLine(640 - prevFeatures[i].x * 2, 480 - prevFeatures[i].y * 2,
-               640 - out_points[i].x * 2, 480 - out_points[i].y * 2,
-               0xff00cc00, 640, pixbuf);
-    }
-  }
-
-  const int threshold = 40;
-  vector<fast::fast_xy> fast_corners;
-#if __SSE2__
-  fast::fast_corner_detect_10_sse2(
-      yuvbuf, 320, 240, 320, threshold, fast_corners);
-#else
-  fast::fast_corner_detect_10(
-      yuvbuf, 320, 240, 320, threshold, fast_corners);
-#endif
-
-  vector<int> scores, nm_corners;
-  fast::fast_corner_score_10(yuvbuf, 320, fast_corners, threshold, scores);
-  fast::fast_nonmax_3x3(fast_corners, scores, nm_corners);
-
-  prevFeatures.clear();
+#if 0
   for (int i = 0; i < nm_corners.size(); i++) {
     const fast::fast_xy c = fast_corners[nm_corners[i]];
     prevFeatures.push_back(cv::Point2f(c.x, c.y));
@@ -242,8 +79,7 @@ void RenderFrame(uint32_t sec, uint32_t usec,
     pixbuf[(479 - y) * 640 - x - 1] = 0xff00ff00;
     pixbuf[(481 - y) * 640 - x - 1] = 0xff00ff00;
   }
-  prevFrame = curFrame;
-  firstframe = false;
+#endif
 
   // draw indicators on the screen for various things
   // "zero" is 116
