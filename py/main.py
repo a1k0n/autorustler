@@ -7,8 +7,7 @@ GRAD_THRESHOLD = 0.02
 
 
 def GammaCorrect(im):
-    # return np.power(im * (1.0 / 255.0), 2.2)
-    return im * (1.0 / 255.0)
+    return 255.0 * np.power(im.astype(np.float32) * (1.0 / 255.0), 2.2)
 
 
 def GenPyramid(im, levels):
@@ -249,18 +248,18 @@ def LoadExampleFrames():
     """ Load example frames, where we can assume there was just Z movement, one
     unit forward"""
     frames = parse.ParseLog(open('../rustlerlog-BMPauR'))
-    for i in range(320):
-        frames.next()
+    #for i in range(320):
+    #    frames.next()
     f = (None,)
     imu = None
     while f[0] != 'img':
         imu = f
         f = frames.next()
-    im1 = GammaCorrect(f[2])
+    im1 = f[2]  # GammaCorrect(f[2])
     f = (None,)
     while f[0] != 'img':
         f = frames.next()
-    im2 = GammaCorrect(f[2])
+    im2 = f[2]  # GammaCorrect(f[2])
     return im1, im2, imu
 
 
