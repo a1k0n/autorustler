@@ -111,6 +111,8 @@ bool IMU::ReadCalibrated(IMUState *s) {
   return true;
 }
 
+// all devices are oriented such that X is to the front of the car, Y is to
+// the left, and Z is up.
 void IMU::Calibrate(const IMURawState &s, IMUState *state) {
   // gyro offset calibration (rough -- needs work)
   Vector3f w0(-s.gyro_y, -s.gyro_z, s.gyro_x);

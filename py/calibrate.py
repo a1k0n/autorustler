@@ -26,18 +26,57 @@ def GetIMU():
 TS, GYRO, TEMP, MAG, ACCEL = GetIMU()
 
 
-def magcal_residual(MAG, a, mb):
-    """ residual from all observations given magnetometer eccentricity, bias,
-    gyro bias, and gyro scale"""
-
-    A = np.array([
+def Amatrix(a):
+    return np.array([
         [a[0], a[1], a[2]],
         [0,    a[3], a[4]],
         [0,    0,    a[5]]
     ])
 
-    mag = np.dot(MAG - mb, A)
-    return np.mean(np.abs(1 - np.einsum('ji,ji->j', mag, mag)))
+
+def Ainv(x):
+    a, b, c, d, e, f = x[:6]
+    a = 1.0/a
+    d = 1.0/d
+    f = 1.0/f
+    return np.array([
+        [a, -a*b*d, -a*b*e*d*f - a*c*f],
+        [0, d, -d*e*f],
+        [0, 0, f]
+    ])
+
+
+def magcal_residual(X, a, mb):
+    """ residual from all observations given magnetometer eccentricity, bias,
+    gyro bias, and gyro scale"""
+
+    # (x-c)T A^T A (x-c) = 1
+    # x^T Ax - 2x^T Ac + c^T Ac = 1
+
+    # a b c | x' = ax + by + cz
+    # 0 d e | y' = dy + ez
+    # 0 0 f | z' = fz
+    # z = 1/f z'
+    # y = 1/d (y' - e/f z')
+    # x = 1/a (x' - b/d(y' - e/f z') - c/f z')
+    #   = 1/a (x' - b/d y' - (be/df - c/f) z')
+    # (x-c) A^T A (x-c)
+    # [(A x) - (A c)]^2 - 1 = 0
+
+    # y = A(x-c)
+    # y /= ||y||
+    # q(x; A, c) = (A^-1 (y+c) - x)^2
+
+    Y = np.dot(X - mb, Ainv(a)).T
+    Y /= np.linalg.norm(Y, axis=0)
+    # Y /= np.sqrt(np.sum(np.square(Y), axis=0))
+    Y = np.dot(Y.T, Amatrix(a)) + mb
+    return np.mean(np.sum(np.square(X - Y), axis=1))
+
+
+def magcal_residual_old(X, a, mb):
+    mag = np.dot(X - mb, Ainv(a))
+    return np.mean(np.square(1 - np.sum(mag*mag, axis=1)))
 
 
 def magcal_residual2(a, mb, gb, gs):
@@ -64,3 +103,24 @@ def magcal_residual2(a, mb, gb, gs):
 
 # i wonder if a more numerically stable parameterization would be to use 1/diag
 # ...nope
+
+
+def initial_state(Xa, Xg):
+    """ estimate initial orientation and biases given a series of measurements
+    during which the IMU was stationary """
+
+    g = 9.81
+    bg = np.mean(Xg, axis=0)
+
+    a = np.mean(Xa, axis=0)
+    na = np.linalg.norm(a)
+    sa = g / na
+    a /= na
+
+    rot = np.cross(np.array([0, 0, -1.0]), a)
+
+    # print 'accel scale', sa
+    # print 'gyro bias', bg
+    # print 'initial orientation', rot
+    # print np.dot(so3.exp(rot), np.array([0, 0, -1.0])), a
+    return sa, bg, rot

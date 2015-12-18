@@ -1,40 +1,39 @@
 import autograd.numpy as np
-import quat
+import so3
 
 
 def initial():
-    q = np.array([0, 0, 0, 1], np.float32)  # unit quaternion orientation
+    r_g = np.array([0, 0, 0], np.float32)   # global to imu frame rotation
     b_g = np.array([0, 0, 0], np.float32)   # gyroscope bias
     v_g = np.array([0, 0, 0], np.float32)   # velocity of IMU in global frame
     b_a = np.array([0, 0, 0], np.float32)   # accelerometer bias
     p_g = np.array([0, 0, 0], np.float32)   # position in global frame
-    return (q, b_g, v_g, b_a, p_g)
+    a_s = 1.0  # accelerometer scale
+    return (r_g, b_g, v_g, b_a, p_g, a_s)
 
 
 def ode(state, measurement):
-    q, bg, vg, ba, pg = state
+    rg, bg, vg, ba, pg, a_s = state
     wm, am = measurement
     gravity = np.array([0, 0, -9.81])
 
     # we could subtract out Earth's coriolis force here, but there's no way
     # we're sensitive enough to notice it
     what = wm - bg
-    ahat = am - ba
+    ahat = (am - ba) * a_s
 
-    dq = 0.5 * np.dot(quat.Omega(what), q)
-    dvg = np.dot(quat.C(q).T, ahat) + gravity
+    dvg = np.dot(so3.exp(-rg), ahat) - gravity
     dpg = vg
-    return (dq, dvg, dpg)
+    return (what, dvg, dpg)
 
 
 def propagate(state, measurement, dt):
-    q, bg, vg, ba, pg = state
-    dq, dvg, dpg = ode(state, measurement)
+    rg, bg, vg, ba, pg, a_s = state
+    dr, dvg, dpg = ode(state, measurement)
     # use Heun's method (trapezoidal rule)
-    dq2, dvg2, dpg2 = ode(
-        (q + dq*dt, bg, vg + dvg*dt, ba, pg + dpg*dt), measurement)
-    q = q + 0.5*dt*(dq + dq2)
+    dr2, dvg2, dpg2 = ode(
+        (rg + dr*dt, bg, vg + dvg*dt, ba, pg + dpg*dt, a_s), measurement)
+    rg = rg + 0.5*dt*(dr + dr2)
     vg = vg + 0.5*dt*(dvg + dvg2)
     pg = pg + 0.5*dt*(dpg + dpg2)
-    q /= np.linalg.norm(q)
-    return (q, bg, vg, ba, pg)
+    return (rg, bg, vg, ba, pg)
