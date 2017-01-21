@@ -11,6 +11,7 @@ BasePlateMountingScrews = [
 
 module IMUMount() {
   // dimensions of 9DOF PCB
+  // FIXME for MPU9250
   width = 22.1;
   length = 16.85;
   depth = 1.66;  // PCB is 1.66mm thick or so

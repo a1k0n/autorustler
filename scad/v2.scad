@@ -1,3 +1,5 @@
+include <traxxas.scad>
+
 // All coordinates are relative to the lower-left corner of the RPi2 viewed
 // from the top with the ethernet/USB on the right side.
 RPi_mounting_holes = [
@@ -73,7 +75,77 @@ module car() {
   import("rustler.stl");
 }
 
-translate([-20 - 85/2, -56/2, 40]) mountplate();
+alignplate_thick = 18/2.54;
+alignplate_thick2 = 6/2.54;
+alignplate_radius = 24/2.54;
+Servoplate_width = 124;
+module alignplate_shape() {
+  r = alignplate_radius;
+  linear_extrude(alignplate_thick) {
+    minkowski() {
+      circle(r=r);
+      polygon(points = [
+          [-Servoplate_width/2 + 19, 253/2],
+          [-Servoplate_width/2 + 50 - r, 114/2 - r],
+          [-Servoplate_width/2 + 165 - r, 114/2 - r],
+          [Servoplate_width/2 - 20, 134/2],
+          [Servoplate_width/2 - 20, -134/2],
+          [-Servoplate_width/2 + 165 - r, -114/2 + r],
+          [-Servoplate_width/2 + 50 - r, -114/2 + r],
+          [-Servoplate_width/2 + 19, -253/2]]);
+    }
+  }
+}
+
+module alignplate_base() {
+  overbore = 2;
+  r = alignplate_radius;
+  difference() {
+    alignplate_shape();
+    difference() {
+      // thin the plate out where not necessary to be thick, but leave a
+      // rigidity spar in the middle
+      union() {
+        translate([-250 - r, -110, alignplate_thick2])
+          cube([450 + r, 220, alignplate_thick - alignplate_thick2 + 0.1]);
+        translate([200, -45, alignplate_thick2])
+          cube([30, 90, alignplate_thick - alignplate_thick2 + 0.1]);
+      }
+      // spar for rigidity
+      translate([-Servoplate_width/2 + 30, -4, alignplate_thick2 - 0.1])
+        cube([Servoplate_width - 35, 8, 8]);
+    }
+
+    // battery holder clearance
+    translate([-Servoplate_width/2 - r - 0.1, -189/2, -0.1])
+      cube([15.1 + r, 189, 17.2]);
+    translate([-Servoplate_width/2 - r - 0.1, -61/2, -0.1])
+      cube([30.1 + r, 61, 17.2]);
+
+    // 4mm (.16) holes .20 from the right edge, 1.34" apart
+    translate([Servoplate_width/2 - 20, 134/2, alignplate_thick])
+      m4flushscrew(h=20);
+    translate([Servoplate_width/2 - 20, -134/2, alignplate_thick])
+      m4flushscrew(h=20);
+    // 3mm (.12) holes .19 from the left edge, 2.53" apart
+    translate([-Servoplate_width/2 + 19, 253/2, alignplate_thick])
+      m3flushscrew(h=20);
+    translate([-Servoplate_width/2 + 19, -253/2, alignplate_thick])
+      m3flushscrew(h=20);
+
+    // weird doohicky on the front
+    translate([Servoplate_width/2 - 38 - 17 - 8, -48/2 - 8, -0.1])
+      cube([17+ 16, 48+ 16, 27.1]);
+    translate([Servoplate_width/2 - 28 - 33 - 8, -12/2 - 8, -0.1])
+      cube([28+ 16, 12+ 16, 47.1]);
+  }
+}
+
+*translate([-20 - 85/2, -56/2, 40]) mountplate();
 *cameramount();
-rotate([90, 0, 0]) scale(10.0) color("gray") car();
-translate([10, -65, 10]) backuplipoly();
+*rotate([90, 0, 0]) scale(10.0) color("gray") car();
+*translate([10, -65, 10]) backuplipoly();
+
+*translate([-121, 0, 100]) rotate([0, 0, 180]) servoholder();
+#servoholder();
+alignplate_base();
