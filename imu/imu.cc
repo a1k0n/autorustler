@@ -1,5 +1,6 @@
 #include <byteswap.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <vector>
 #include <Eigen/Dense>
 #include "gpio/i2c.h"
