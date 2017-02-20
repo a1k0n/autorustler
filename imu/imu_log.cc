@@ -5,22 +5,23 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "./imu.h"
+
+#include "gpio/i2c.h"
+#include "imu/imu.h"
 
 volatile bool done = false;
 
 void handle_sigint(int signo) { done = true; }
 
 int main() {
-  int i2cfd = open("/dev/i2c-1", O_RDWR);
-  if (i2cfd == -1) {
-    perror("/dev/i2c-1");
+  I2C i2c;
+  if (!i2c.Open()) {
     return 1;
   }
 
   signal(SIGINT, handle_sigint);
 
-  IMU imu(i2cfd);
+  IMU imu(i2c);
   printf("# t gx gy gz mx my mz ax ay az\n");
 
   bool mag_calibrated = imu.LoadMagCalibration();

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <Eigen/Dense>
+#include "gpio/i2c.h"
 
 // TODO: rename to imu/dev.h for IMU device raw access
 // then make an IMU class which is self-calibrating, has a kalman filter, etc.
@@ -21,11 +22,9 @@ struct IMUState {
 
 class IMU {
  public:
-  IMU();
-  explicit IMU(int i2cfd);
-  ~IMU();
+  explicit IMU(const I2C &i2c) : i2c_(i2c), YTY_(10, 10) {}
 
-  bool Init(int i2cfd);
+  bool Init();
 
   // read raw sensor values
   // unsupported
@@ -50,7 +49,7 @@ class IMU {
   bool CalibrateMag(const Eigen::Vector3f &mag, bool is_calibrated, Eigen::Vector3f *north);
   bool SolveMagCalibration();
 
-  int fd_;
+  const I2C &i2c_;
 
   Eigen::Vector3f magadj_;
   Eigen::MatrixXd YTY_;

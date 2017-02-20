@@ -19,47 +19,31 @@ using Eigen::VectorXd;
 using Eigen::Matrix3f;
 using Eigen::MatrixXd;
 
-IMU::IMU() : YTY_(10, 10) {
-  fd_ = -1;
-}
-
-IMU::IMU(int i2cfd) : YTY_(10, 10) {
-  Init(i2cfd);
-}
-
-IMU::~IMU() {
-  if (fd_ != -1) {
-    close(fd_);
-  }
-}
-
-bool IMU::Init(int i2cfd) {
-  fd_ = i2cfd;
-
-  i2c_write(fd_, 0x68, 107, 0x80);  // reset
+bool IMU::Init() {
+  i2c_.Write(0x68, 107, 0x80);  // reset
   usleep(10000);
-  i2c_write(fd_, 0x68, 107, 0);  // wake up
-  i2c_write(fd_, 0x68, 107, 1);  // use gyro clock
-  i2c_write(fd_, 0x68, 108, 0);  // enable accel + gyro
-  i2c_write(fd_, 0x68, 55, 0x32);  // enable bypass, int pin latch
-  i2c_write(fd_, 0x68, 0x1a, 0x03);  // set filters
-  i2c_write(fd_, 0x68, 0x19, 4);  // samplerate divisor
-  i2c_write(fd_, 0x68, 0x1a, 0);  // accel filter
-  i2c_write(fd_, 0x68, 0x1b, 0);  // gyro filter
-  i2c_write(fd_, 0x68, 0x38, 1);  // DRDY int enable
+  i2c_.Write(0x68, 107, 0);  // wake up
+  i2c_.Write(0x68, 107, 1);  // use gyro clock
+  i2c_.Write(0x68, 108, 0);  // enable accel + gyro
+  i2c_.Write(0x68, 55, 0x32);  // enable bypass, int pin latch
+  i2c_.Write(0x68, 0x1a, 0x03);  // set filters
+  i2c_.Write(0x68, 0x19, 4);  // samplerate divisor
+  i2c_.Write(0x68, 0x1a, 0);  // accel filter
+  i2c_.Write(0x68, 0x1b, 0);  // gyro filter
+  i2c_.Write(0x68, 0x38, 1);  // DRDY int enable
 
   uint8_t id;
-  i2c_read(fd_, 0x68, 117, 1, &id);  // whoami
+  i2c_.Read(0x68, 117, 1, &id);  // whoami
   fprintf(stderr, "\r\nMPU-9150 id: %02x\r\n", id);
 
-  i2c_read(fd_, 0x0c, 0x00, 1, &id);  // mag device id
+  i2c_.Read(0x0c, 0x00, 1, &id);  // mag device id
   fprintf(stderr, "AK8975C id: %02x\r\n", id);
 
   uint8_t magadj8[3];
-  i2c_write(fd_, 0x0c, 0x0a, 0x0f);  // mag fuse rom access
-  i2c_read(fd_, 0x0c, 0x10, 3, magadj8);  // mag device id
-  // i2c_write(fd_, 0x0c, 0x0a, 0x01);  // single read (ak8975c only)
-  i2c_write(fd_, 0x0c, 0x0a, 0x16);  // 100Hz continuous 16-bit (ak8963c)
+  i2c_.Write(0x0c, 0x0a, 0x0f);  // mag fuse rom access
+  i2c_.Read(0x0c, 0x10, 3, magadj8);  // mag device id
+  // i2c_.Write(0x0c, 0x0a, 0x01);  // single read (ak8975c only)
+  i2c_.Write(0x0c, 0x0a, 0x16);  // 100Hz continuous 16-bit (ak8963c)
   magadj_ = Vector3f(
       1 + (magadj8[0] - 128.0f) / 256.0f,
       1 + (magadj8[1] - 128.0f) / 256.0f,
@@ -75,14 +59,14 @@ bool IMU::Init(int i2cfd) {
 
 bool IMU::ReadMag(Vector3f *mag) {
   uint8_t readbuf[14];
-  if (i2c_read(fd_, 0x0c, 2, 1, readbuf)) {  // ak8963c/75c magnetometer
+  if (!i2c_.Read(0x0c, 2, 1, readbuf)) {  // ak8963c/75c magnetometer
     if (readbuf[0] & 0x01) {
-      i2c_read(fd_, 0x0c, 0x03, 7, readbuf);
+      i2c_.Read(0x0c, 0x03, 7, readbuf);
       int16_t x = (readbuf[1] << 8) | readbuf[0],
               y = (readbuf[3] << 8) | readbuf[2],
               z = (readbuf[5] << 8) | readbuf[4];
       *mag = Vector3f(x, y, z).cwiseProduct(magadj_);
-      // i2c_write(fd_, 0x0c, 0x0a, 0x01);  // single read (75c only)
+      // i2c_.Write(0x0c, 0x0a, 0x01);  // single read (75c only)
       return true;
     }
   }
@@ -182,7 +166,7 @@ bool IMU::SaveMagCalibration() {
 bool IMU::ReadIMU(Vector3f *accel, Vector3f *gyro, float *temp) {
   uint8_t readbuf[14];
   // mpu-9150 accel & gyro
-  if (i2c_read(fd_, 0x68, 0x3b, 14, readbuf)) {
+  if (!i2c_.Read(0x68, 0x3b, 14, readbuf)) {
     int16_t ax = (readbuf[0] << 8) | readbuf[1],
             ay = (readbuf[2] << 8) | readbuf[3],
             az = (readbuf[4] << 8) | readbuf[5];
