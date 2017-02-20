@@ -23,24 +23,20 @@ int main() {
   IMU imu(i2cfd);
   printf("# t gx gy gz mx my mz ax ay az\n");
 
+  bool mag_calibrated = imu.LoadMagCalibration();
+
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
-    IMURawState s;
-    imu.ReadRaw(&s);
-#if 0
-    fprintf(stderr, "gyro [%+4d %+4d %+4d] mag [%+4d %+4d %+4d] "
-            "acc [%+4d %+4d %+4d]\e[K\r",
-            s.gyro_x, s.gyro_y, s.gyro_z,
-            s.mag_x, s.mag_y, s.mag_z,
-            s.accel_x, s.accel_y, s.accel_z);
-    fflush(stderr);
-#endif
-    printf("%d.%06d %4d %4d %4d %4d %4d %4d %4d %4d %4d\n",
-           tv0.tv_sec, tv0.tv_usec,
-           s.gyro_x, s.gyro_y, s.gyro_z,
-           s.mag_x, s.mag_y, s.mag_z,
-           s.accel_x, s.accel_y, s.accel_z);
+    IMUState s;
+    imu.ReadCalibrated(&s);
+
+    printf("%d.%06d m [%f,%f,%f] a [%f,%f,%f] g [%f,%f,%f]\n",
+        tv0.tv_sec, tv0.tv_usec,
+        s.N[0], s.N[1], s.N[2],
+        s.g[0], s.g[1], s.g[2],
+        s.w[0], s.w[1], s.w[2]);
+
     fflush(stdout);
     timeval tv;
     gettimeofday(&tv, NULL);

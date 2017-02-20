@@ -47,6 +47,8 @@ def diff(r, R, u):
     """ return Jacobian of exp(r_hat) * u
     R = exp(r) <- caller will already have this, so pass it in """
     # derivation: http://arxiv.org/abs/1312.0788
+    # THIS IS WRONG! which even a rudimentary test will prove
+    # for now use cv2.Rodrigues
     uhat = hat(u)
     rnorm = np.dot(r, r)
     if rnorm == 0:

@@ -1,11 +1,52 @@
+#include <fcntl.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
-#include <sys/ioctl.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 #include "./i2c.h"
 
-int i2c_read(int file, uint8_t addr, uint8_t reg,
-             uint8_t *outbuf, int len) {
+static const char I2C_DEVICE[] = "/dev/i2c-1";
+
+bool I2C::Open() {
+  fd_ = open(I2C_DEVICE, O_RDWR);
+  if (fd_ == -1) {
+    perror(I2C_DEVICE);
+    return false;
+  }
+  return true;
+}
+
+void I2C::Close() {
+  if (fd_ != -1) {
+    close(fd_);
+    fd_ = -1;
+  }
+}
+
+bool I2C::Write(uint8_t addr, uint8_t reg, uint8_t value) const {
+  uint8_t outbuf[2];
+  struct i2c_rdwr_ioctl_data packets;
+  struct i2c_msg messages[1];
+
+  outbuf[0] = reg;
+  outbuf[1] = value;
+
+  messages[0].addr  = addr;
+  messages[0].flags = 0;
+  messages[0].len   = 2;
+  messages[0].buf   = outbuf;
+
+  packets.msgs  = messages;
+  packets.nmsgs = 1;
+  if (ioctl(fd_, I2C_RDWR, &packets) < 0) {
+    perror("i2c_write");
+    return false;
+  }
+  return true;
+}
+
+bool I2C::Read(uint8_t addr, uint8_t reg, int len, uint8_t *outbuf) const {
   struct i2c_rdwr_ioctl_data packets;
   struct i2c_msg messages[2];
 
@@ -21,32 +62,10 @@ int i2c_read(int file, uint8_t addr, uint8_t reg,
 
   packets.msgs      = messages;
   packets.nmsgs     = 2;
-  if (ioctl(file, I2C_RDWR, &packets) < 0) {
+  if (ioctl(fd_, I2C_RDWR, &packets) < 0) {
     perror("i2c_read");
-    return 1;
+    return false;
   }
 
-  return 0;
-}
-
-int i2c_write(int file, uint8_t addr, uint8_t reg, uint8_t value) {
-  uint8_t outbuf[2];
-  struct i2c_rdwr_ioctl_data packets;
-  struct i2c_msg messages[1];
-
-  outbuf[0] = reg;
-  outbuf[1] = value;
-
-  messages[0].addr  = addr;
-  messages[0].flags = 0;
-  messages[0].len   = 2;
-  messages[0].buf   = outbuf;
-
-  packets.msgs  = messages;
-  packets.nmsgs = 1;
-  if (ioctl(file, I2C_RDWR, &packets) < 0) {
-    perror("i2c_write");
-    return 1;
-  }
-  return 0;
+  return true;
 }

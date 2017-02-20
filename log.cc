@@ -13,7 +13,12 @@ volatile bool done = false;
 
 void handle_sigint(int signo) { done = true; }
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc < 2) {
+    printf("usage: %s [/dev/usbserial]\n", argv[0]);
+    return 1;
+  }
+
   int i2cfd = open("/dev/i2c-1", O_RDWR);
   if (i2cfd == -1) {
     perror("/dev/i2c-1");
@@ -26,12 +31,12 @@ int main() {
   printf("# t gx gy gz mx my mz ax ay az steer throttle vbat\n");
 
   RadioControl rc;
-  if (!rc.Init()) {
+  if (!rc.Open(argv[1])) {
     fprintf(stderr, "radio init fail\n");
     return 1;
   }
 
-  float vbat;
+  float vbat = 0;
   IMURawState s;
   RCState rcstate;
   while (!done) {

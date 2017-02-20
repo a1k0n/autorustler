@@ -95,8 +95,8 @@ bool Camera::Init(int width, int height, int fps) {
 
   video_port->format->encoding = MMAL_ENCODING_I420;
   video_port->format->encoding_variant = MMAL_ENCODING_I420;
-  video_port->format->es->video.width = 320;
-  video_port->format->es->video.height = 240;
+  video_port->format->es->video.width = width;
+  video_port->format->es->video.height = height;
   video_port->format->es->video.crop.x = 0;
   video_port->format->es->video.crop.y = 0;
   video_port->format->es->video.crop.width = width;

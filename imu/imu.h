@@ -2,7 +2,6 @@
 #define IMU_IMU_H_
 
 #include <stdint.h>
-#include <vector>
 #include <Eigen/Dense>
 
 // TODO: rename to imu/dev.h for IMU device raw access
@@ -29,7 +28,8 @@ class IMU {
   bool Init(int i2cfd);
 
   // read raw sensor values
-  bool ReadRaw(IMURawState *state);
+  // unsupported
+  // bool ReadRaw(IMURawState *state);
 
   // Read adjusted sensor values after various calibrations (gyro
   // temperature-compensated offset, magnetometer offset, accelerometer offset)
@@ -37,15 +37,32 @@ class IMU {
   bool ReadCalibrated(IMUState *state);
 
   // convert raw readings to calibrated ones; ReadCalibrated just calls this
-  void Calibrate(const IMURawState &rawstate, IMUState *state);
+  // unsupported
+  // void Calibrate(const IMURawState &rawstate, IMUState *state);
+
+  // write magnetometer calibration out
+  bool LoadMagCalibration();
+  bool SaveMagCalibration();
 
  private:
+  bool ReadMag(Eigen::Vector3f *mag);
+  bool ReadIMU(Eigen::Vector3f *accel, Eigen::Vector3f *gyro, float *temp);
+  bool CalibrateMag(const Eigen::Vector3f &mag, bool is_calibrated, Eigen::Vector3f *north);
+  bool SolveMagCalibration();
+
   int fd_;
 
-  std::vector<Eigen::Vector3f> mag_cal_points_;
-  Eigen::Matrix4f mag_XTX_;
-  Eigen::Vector4f mag_XTY_;
-  Eigen::Vector3f mag_bias_;
+  Eigen::Vector3f magadj_;
+  Eigen::MatrixXd YTY_;
+  Eigen::Matrix3f proj_;
+  Eigen::Vector3f center_;
+
+  bool mag_calibrated_;
+
+  // std::vector<Eigen::Vector3f> mag_cal_points_;
+  // Eigen::Matrix4f mag_XTX_;
+  // Eigen::Vector4f mag_XTY_;
+  // Eigen::Vector3f mag_bias_;
 };
 
 #endif  // IMU_IMU_H_
