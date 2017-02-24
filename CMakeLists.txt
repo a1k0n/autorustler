@@ -29,3 +29,6 @@ add_subdirectory(imu)
 # add_subdirectory(lcd)
 # add_subdirectory(ui)
 add_subdirectory(drive)
+
+add_executable(rc rc.cc)
+target_link_libraries(rc car input gpio)
