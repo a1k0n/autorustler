@@ -25,7 +25,8 @@ int main() {
 
   for (;;) {
     int t = 0, s = 0;
-    if (js.ReadInput(&t, &s)) {
+    uint16_t b = 0;
+    if (js.ReadInput(&t, &s, &b)) {
       pca.SetPWM(0, 614.4 - 204.8*s / 32767.0);  // steering is backwards
       pca.SetPWM(1, 614.4 + 204.8*t / 32767.0);
     }

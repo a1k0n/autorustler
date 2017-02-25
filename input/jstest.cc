@@ -12,8 +12,9 @@ int main() {
 
   for (;;) {
     int t = 0, s = 0;
-    if (js.ReadInput(&t, &s)) {
-      printf("%6d %6d\r", t, s);
+    uint16_t b = 0;
+    if (js.ReadInput(&t, &s, &b)) {
+      printf("%6d %6d %4x\r", t, s, b);
       fflush(stdout);
     }
     usleep(10000);

@@ -12,6 +12,7 @@ JoystickInput::JoystickInput() {
   throttle_ = 0;
   steering_ = 0;
   steertrim_ = -6500;
+  buttons_ = 0;
   fd_ = -1;
 }
 
@@ -36,13 +37,14 @@ bool JoystickInput::Open() {
   return true;
 }
 
-bool JoystickInput::ReadInput(int *throttle, int *steering) {
+bool JoystickInput::ReadInput(int *throttle, int *steering, uint16_t *buttons) {
   bool newvalue = false;
 
   while (fd_ != -1) {
     // set saved values
     *throttle = throttle_;
     *steering = steering_ + steertrim_;
+    *buttons = buttons_;
 
     uint8_t buf[8];
     int n = read(fd_, buf, 8);
@@ -72,6 +74,14 @@ bool JoystickInput::ReadInput(int *throttle, int *steering) {
           break;
         case 1:  // B, steer trim right
           steertrim_ += 100;
+          newvalue = true;
+          break;
+        default:
+          if (value) {
+            buttons_ |= (1 << number);
+          } else {
+            buttons_ &= ~(1 << number);
+          }
           newvalue = true;
           break;
       }

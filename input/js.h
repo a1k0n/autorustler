@@ -4,6 +4,8 @@
 #ifndef INPUT_JS_H_
 #define INPUT_JS_H_
 
+#include <stdint.h>
+
 class JoystickInput {
  public:
   JoystickInput();
@@ -12,7 +14,7 @@ class JoystickInput {
   bool Open();
 
   // Read latest car input from joystick
-  bool ReadInput(int *throttle, int *steering);
+  bool ReadInput(int *throttle, int *steering, uint16_t *buttons);
 
   int GetFileDescriptor() { return fd_; }
 
@@ -21,6 +23,7 @@ class JoystickInput {
 
   int throttle_, steering_;
   int steertrim_;
+  uint16_t buttons_;
 };
 
 #endif  // INPUT_JS_H_
