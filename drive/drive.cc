@@ -16,7 +16,11 @@ void handle_sigint(int signo) { done = true; }
 
 class Driver: public CameraReceiver {
  public:
-  Driver() { output_file_ = NULL; frame_ = 0; }
+  Driver() {
+    output_file_ = NULL;
+    frame_ = 0;
+    autosteer_ = false;
+  }
 
   bool StartRecording(const char *fname) {
     if (!strcmp(fname, "-")) {
@@ -62,8 +66,52 @@ class Driver: public CameraReceiver {
       fwrite(&steering_, sizeof(steering_), 1, output_file_);
       fwrite(buf, 1, length, output_file_);
     }
-    // fprintf(stderr, "%d.%06d frame %d\n", t.tv_sec, t.tv_usec, frame_++);
+
+    // identify yellow lines, fit line, PID steering!
+    // simple AF
+    // we don't even need to undistort for that, though we could
+
+    const int ytop = 274 / 2;
+    // linear regression statistics:
+    float sumxy = 0, sumx = 0, sumy = 0, sumy2 = 0, n = 0;
+    for (int y = ytop; y < 240; y++) {
+      for (int x = 0; x < 320; x++) {
+        uint8_t u = buf[640*480 + y*320 + x];
+        if (y < 110) continue;
+        uint8_t v = buf[640*480 + 320*240 + y*320 + x];
+        if (v > 140) continue;
+        uint8_t y = buf[y*640 + x*2];
+        if (y < 150) continue;
+        // add x, y to linear regression
+        sumx += x;
+        sumy += (240.-y);
+        sumxy += (240.-y)*x;
+        sumy2 += (240.-y)*(240.-y);
+        n += 1;
+      }
+    }
+    if (n > 5) {
+      // intercept is the projection of the line on the bottom of the screen
+      // which is our steering error
+      // the slope also determines our angle offset
+      sumx /= n;
+      sumy /= n;
+      sumxy /= n;
+      sumy2 /= n;
+      beta = (sumxy - sumx*sumy) / (sumy2 - sumy*sumy);
+      alpha = sumx - beta*sumy;
+      fprintf(stderr, "alpha %f beta %f\n", alpha, beta);
+    } else {
+      // we're lost, so we have to assume we're way off the same side of the
+      // screen as last time
+    }
+    if (autosteer_) {
+      // nothing yet
+    }
+
   }
+
+  bool autosteer_;
 
  private:
   FILE *output_file_;
@@ -78,7 +126,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  int fps = 20;
+  int fps = 30;
 
   if (argc > 2) {
     fps = atoi(argv[2]);
@@ -88,7 +136,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (!Camera::Init(640, 512, fps))
+  if (!Camera::Init(640, 480, fps))
     return 1;
 
   I2C i2c;
@@ -134,6 +182,19 @@ int main(int argc, char *argv[]) {
         driver.StopRecording();
         fprintf(stderr, "%d.%06d stopped recording\n", tv.tv_sec, tv.tv_usec);
       }
+
+      if (b & 0x10) {  // not sure which button this is
+        if (!driver.autosteer_) {
+          fprintf(stderr, "%d.%06d autosteer ON\n", tv.tv_sec, tv.tv_usec);
+          driver.autosteer_ = true;
+        }
+      } else {
+        if (driver.autosteer_) {
+          driver.autosteer_ = false;
+          fprintf(stderr, "%d.%06d autosteer OFF\n", tv.tv_sec, tv.tv_usec);
+        }
+      }
+
       steering_ = 614.4 - 204.8*s / 32767.0;
       throttle_ = 614.4 + 204.8*t / 32767.0;
       pca.SetPWM(0, steering_);
