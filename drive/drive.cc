@@ -14,6 +14,9 @@ uint16_t throttle_ = 0, steering_ = 0;
 
 void handle_sigint(int signo) { done = true; }
 
+I2C i2c;
+PCA9685 pca(i2c);
+
 class Driver: public CameraReceiver {
  public:
   Driver() {
@@ -77,11 +80,13 @@ class Driver: public CameraReceiver {
     for (int y = ytop; y < 240; y++) {
       for (int x = 0; x < 320; x++) {
         uint8_t u = buf[640*480 + y*320 + x];
-        if (y < 110) continue;
+        if (u >= 105) continue;
         uint8_t v = buf[640*480 + 320*240 + y*320 + x];
-        if (v > 140) continue;
+        if (v <= 140) continue;
+#if 0
         uint8_t y = buf[y*640 + x*2];
-        if (y < 150) continue;
+        if (y < 160) continue;
+#endif
         // add x, y to linear regression
         sumx += x;
         sumy += (240.-y);
@@ -90,6 +95,18 @@ class Driver: public CameraReceiver {
         n += 1;
       }
     }
+#if 0
+    sumx *= 0.5;
+    sumy *= 0.5;
+    sumxy *= 0.5;
+    sumy2 *= 0.5;
+    n *= 0.5;
+#endif
+    static int last_side = 0;
+
+    static const float CONST_P = 1.0 / 500.0;
+    static const float CONST_V = 700;  // safe speed: 700
+
     if (n > 5) {
       // intercept is the projection of the line on the bottom of the screen
       // which is our steering error
@@ -98,17 +115,23 @@ class Driver: public CameraReceiver {
       sumy /= n;
       sumxy /= n;
       sumy2 /= n;
-      beta = (sumxy - sumx*sumy) / (sumy2 - sumy*sumy);
-      alpha = sumx - beta*sumy;
+      float beta = (sumxy - sumx*sumy) / (sumy2 - sumy*sumy);
+      float alpha = sumx - beta*sumy;
       fprintf(stderr, "alpha %f beta %f\n", alpha, beta);
-    } else {
+      last_side = alpha > 160 ? 1 : -1;
+      if (autosteer_) {
+        float s = CONST_P * (alpha - 160);
+        float s0 = -6500 / 32767.0;
+        steering_ = 614.4 - 204.8*(s0 + s);
+        pca.SetPWM(0, steering_);
+        pca.SetPWM(1, CONST_V);
+      }
+    } else if (autosteer_) {
       // we're lost, so we have to assume we're way off the same side of the
       // screen as last time
+      pca.SetPWM(0, 614.4 - 204.8 * last_side);
+      pca.SetPWM(1, CONST_V - 20);
     }
-    if (autosteer_) {
-      // nothing yet
-    }
-
   }
 
   bool autosteer_;
@@ -139,7 +162,6 @@ int main(int argc, char *argv[]) {
   if (!Camera::Init(640, 480, fps))
     return 1;
 
-  I2C i2c;
   JoystickInput js;
 
   if (!i2c.Open()) {
@@ -150,7 +172,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  PCA9685 pca(i2c);
 
   pca.Init(100);  // 100Hz output
   pca.SetPWM(0, 614);
@@ -195,10 +216,12 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      steering_ = 614.4 - 204.8*s / 32767.0;
-      throttle_ = 614.4 + 204.8*t / 32767.0;
-      pca.SetPWM(0, steering_);
-      pca.SetPWM(1, throttle_);
+      if (!driver.autosteer_) {
+        steering_ = 614.4 - 204.8*s / 32767.0;
+        pca.SetPWM(0, steering_);
+        throttle_ = 614.4 + 204.8*t / 32767.0;
+        pca.SetPWM(1, throttle_);
+      }
     }
     usleep(1000);
   }
