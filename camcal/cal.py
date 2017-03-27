@@ -18,6 +18,8 @@ image_points = []
 for jpg in os.listdir("."):
     if not jpg.endswith(".jpg"):
         continue
+    if "undistort" in jpg:
+        continue
     frame = cv2.imread(jpg)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     res = cv2.aruco.detectMarkers(gray, dictionary)
@@ -38,7 +40,14 @@ _K = np.eye(3)
 _D = np.zeros((4, 1))
 rvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(len(image_points))]
 tvecs = [np.zeros((1, 1, 3), dtype=np.float64) for i in range(len(image_points))]
-calibration_flags = cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC + cv2.fisheye.CALIB_FIX_SKEW +cv2.fisheye.CALIB_CHECK_COND
+calibration_flags = (
+    cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
+    + cv2.fisheye.CALIB_FIX_SKEW
+    + cv2.fisheye.CALIB_CHECK_COND
+    + cv2.fisheye.CALIB_FIX_K2
+    + cv2.fisheye.CALIB_FIX_K3
+    + cv2.fisheye.CALIB_FIX_K4)
+
 cal = cv2.fisheye.calibrate(object_points, image_points, imsize[::-1], _K, _D, rvecs, tvecs, calibration_flags)
 # cal = cv2.calibrateCamera(object_points, image_points, imsize[::-1], cam, None)
 
