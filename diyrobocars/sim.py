@@ -2,9 +2,9 @@ import numpy as np
 import cv2
 
 
-steering_const = 0.7  # max steering angle
-speed_const = 100  # max speed
-T_w = 0.04
+steering_const = 8.0  # max steering angle
+speed_const = 200  # max speed
+T_w = 0.4
 T_v = 2.
 
 track = np.frombuffer(open("trackdata.f32").read(), np.float32)
@@ -55,37 +55,12 @@ def draw_track(img, P):
                  (255, 255, 255), 1, shift=4)
 
 
-def next_state(X, u, dt=1.0/30):
-    # unpack state and input
-    ye, psi, vt, w, s, K = X
-    throttle, steering = u
-
-    X = np.copy(X)  # copy X for output
-    # update vt
-    X[2] += dt * (speed_const * throttle - vt) / T_v
-    vt = (vt + X[2]) * 0.5  # use midpoint
-
-    # update w
-    X[3] += dt * (vt / speed_const)**0.8 * (steering_const * steering - w) / T_w
-    w = (w + X[3]) * 0.5  # use midpoint
-
-    # update psi, ye
-    X[1] += dt * (w - vt * np.cos(psi) * (K / (1. - ye*K)))
-    psi = (psi + X[1]) * 0.5
-    X[1] %= 2*np.pi
-    X[0] += dt * vt * np.sin(psi)
-    ye = (X[0] + ye) * 0.5
-
-    # update s
-    ds = 1.0 / 11.0  # points are spaced 11 units apart
-    X[4] += ds * dt * vt * np.cos(psi) * (1.0 / (1 - ye*K))
-
-    return X
-
-
 def get_curvature(s):
-    s = np.mod(s, track.shape[1] - 1)
+    # FIXME: just make this a lookup table
+    s %= track.shape[1] - 1
     si = np.int32(s)  # track point index (+1 hack to handle negatives)
+    if si == track.shape[1] - 1:
+        si = 0
     ts0 = track[:, si]
     ts1 = track[:, si+1]
     p0 = ts0[0] + 1j*ts0[1]
@@ -96,9 +71,53 @@ def get_curvature(s):
     return np.real(k)
 
 
-def draw_frame(X):
+def next_state(X, u, T=1.0/30):
+    # unpack state and input
+    while T > 0:
+        ye, psi, vt, w, s = X
+        X = np.copy(X)  # copy X for output
+        K = get_curvature(s)
+        throttle, steering = u
+
+        # update s (note: points are spaced 11 units apart, hence 1/11 adjustment)
+        dsdt = (1. / 11.) * vt * np.cos(psi) * (1.0 / (1 - ye*K))
+        if dsdt == 0:
+            dt = T
+        elif dsdt > 0:
+            # determine time left until we cross next segment
+            nexts = np.floor(s + 1) - s
+            dt = min(T, nexts / dsdt)
+            X[4] += dsdt * dt
+        else:
+            # previous
+            nexts = np.ceil(s - 1) - s
+            dt = min(T, nexts / dsdt)
+            X[4] += dsdt * dt
+        assert dt > 0
+
+        # update vt
+        X[2] += dt * (speed_const * throttle - vt) / T_v
+        vt = (vt + X[2]) * 0.5  # use midpoint
+
+        # update w
+        X[3] += dt * np.sign(vt) * (np.abs(vt) / speed_const)**0.6 * (steering_const * steering - w) / T_w
+        w = (w + X[3]) * 0.5  # use midpoint
+
+        # update psi, ye
+        X[1] += dt * (w - vt * np.cos(psi) * (K / (1. - ye*K)))
+        psi = (psi + X[1]) * 0.5
+        X[1] %= 2*np.pi
+        X[0] += dt * vt * np.sin(psi)
+        ye = (X[0] + ye) * 0.5
+
+        T -= dt
+
+    return X
+
+
+def draw_frame(X, u):
     # unpack state
-    ye, psi, vt, w, s, K = X
+    ye, psi, vt, w, s = X
     frame = np.zeros((480, 640, 3))
 
     s = np.mod(s, track.shape[1] - 1)
@@ -126,6 +145,7 @@ def draw_frame(X):
     draw_track(frame, P)
 
     # show virtual curvature on track
+    K = get_curvature(s)
     r = 1.0 / K
     cv2.circle(frame,
                (int(16*(320 + 3*r - 3*ye)), 16*240),
@@ -144,23 +164,54 @@ def draw_frame(X):
              (0, 0, 255), 1, shift=4)
     # cv2.circle(frame, (320, 240), 3, (255, 255, 255), 2)
 
+    cv2.line(frame,
+             (int(u[0] * 300 + 320), 460), (320, 460), (255, 255, 255), 5)
+    cv2.line(frame,
+             (int(u[1] * 300 + 320), 470), (320, 470), (255, 255, 0), 5)
+
     cv2.imshow('state', frame)
 
 
+def control(X, nsteps, nrecur):
+    # dumb N-step lookahead
+
+    s0 = X[4]
+    besta, bests, bestR = None, None, None
+    for a in [-1.0, 0.0, 1.0]:
+        for s in [-1.0, -0.5, 0.0, 0.5, 1.0]:
+            nextx = X
+            for _ in range(20):
+                nextx = next_state(nextx, [a, s])
+                if np.abs(nextx[0]) > 18:
+                    # no going out of the track
+                    nextx[4] = -1000
+                    break
+                # if np.abs(nextx[0] * nextx[5] - 1.0) < 0.5:
+                #     # no crossing the radius of curvature
+                #     nextx[4] = -1000
+                #     break
+            R = nextx[4] - s0
+            if nrecur > 1:
+                R += control(nextx, nsteps, nrecur - 1)[2]
+            if bestR is None or R > bestR:
+                besta, bests, bestR = a, s, R
+    return besta, bests, bestR
+
+
 def sim():
-    X = np.zeros(6)
+    X = np.zeros(5)
     X[0] = 10
-    accel, steering = 0.2, 0.1
+    accel, steering = 1.0, 0.1
     while True:
-        X[5] = get_curvature(X[4])
-        draw_frame(X)
+        draw_frame(X, [accel, steering])
         k = cv2.waitKey(10)
         if k == ord('q'):
             break
         # X[4] += 0.1
-        # X[5] = get_curvature(X[4])
         # print 'K', X[5]
-        steering = -0.1*X[0] - X[3]
+        # steering = np.clip(X[2] * X[5] / steering_const - 0.0001*X[0], -1, 1)
+        accel, steering, reward = control(X, 10, 1)
+        print accel, steering, reward
         X = next_state(X, [accel, steering])
         print "s: %0.1f ye %0.2f psi %0.3f vt %0.1f" % (X[4], X[0], X[1], X[2])
 
