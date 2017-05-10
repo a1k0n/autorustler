@@ -59,7 +59,7 @@ bool IMU::Init() {
 
 bool IMU::ReadMag(Vector3f *mag) {
   uint8_t readbuf[14];
-  if (!i2c_.Read(0x0c, 2, 1, readbuf)) {  // ak8963c/75c magnetometer
+  if (i2c_.Read(0x0c, 2, 1, readbuf)) {  // ak8963c/75c magnetometer
     if (readbuf[0] & 0x01) {
       i2c_.Read(0x0c, 0x03, 7, readbuf);
       int16_t x = (readbuf[1] << 8) | readbuf[0],
@@ -166,7 +166,7 @@ bool IMU::SaveMagCalibration() {
 bool IMU::ReadIMU(Vector3f *accel, Vector3f *gyro, float *temp) {
   uint8_t readbuf[14];
   // mpu-9150 accel & gyro
-  if (!i2c_.Read(0x68, 0x3b, 14, readbuf)) {
+  if (i2c_.Read(0x68, 0x3b, 14, readbuf)) {
     int16_t ax = (readbuf[0] << 8) | readbuf[1],
             ay = (readbuf[2] << 8) | readbuf[3],
             az = (readbuf[4] << 8) | readbuf[5];

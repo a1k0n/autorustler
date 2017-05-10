@@ -43,9 +43,10 @@ class IMU {
   bool LoadMagCalibration();
   bool SaveMagCalibration();
 
- private:
   bool ReadMag(Eigen::Vector3f *mag);
   bool ReadIMU(Eigen::Vector3f *accel, Eigen::Vector3f *gyro, float *temp);
+
+ private:
   bool CalibrateMag(const Eigen::Vector3f &mag, bool is_calibrated, Eigen::Vector3f *north);
   bool SolveMagCalibration();
 
