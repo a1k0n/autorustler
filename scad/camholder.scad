@@ -33,7 +33,7 @@ module BumperSpar() {
   rotate([90, 0, 0]) rotate([0, 90, 0]) linear_extrude(height = 2)
     polygon(points=[
       [-1.72, 3.0],
-      [70, 0], [0, 0], [-1.72, 3.0]]);
+      [100, 3], [100, -0.1], [0, -0.1], [-1.72, 3.0]]);
 }
 
 module BumperBracket() {
@@ -53,12 +53,12 @@ module BumperBracket() {
   linear_extrude(height = 2)
     polygon(points=[
       [-25, 0],
-      [-wide_cam_width/2, 70],
-      [wide_cam_width/2, 70],
+      [-wide_cam_width/2, 105],
+      [wide_cam_width/2, 105],
       [25, 0], [-25, 0]]);
   translate([-12, 0, 1.9]) BumperSpar();
   translate([10, 0, 1.9]) BumperSpar();
 }
 
 BumperBracket();
-translate([0, 80, 0]) CameraMount();
+translate([0, 115, 0]) CameraMount();
