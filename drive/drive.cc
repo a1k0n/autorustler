@@ -1,38 +1,129 @@
+#include <fcntl.h>
+#include <pthread.h>
+#include <semaphore.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <deque>
+
 #include "cam/cam.h"
 #include "car/pca9685.h"
 #include "gpio/i2c.h"
 #include "input/js.h"
+#include "imu/imu.h"
 
 volatile bool done = false;
-uint16_t throttle_ = 0, steering_ = 0;
+uint16_t throttle_ = 614, steering_ = 614;
 
 void handle_sigint(int signo) { done = true; }
 
 I2C i2c;
 PCA9685 pca(i2c);
+IMU imu(i2c);
+Eigen::Vector3f accel_(0, 0, 0), gyro_(0, 0, 0);
+
+// asynchronous flush to sdcard
+struct FlushEntry {
+  int fd_;
+  uint8_t *buf_;
+  size_t len_;
+
+  FlushEntry() { buf_ = NULL; }
+  FlushEntry(int fd, uint8_t *buf, size_t len):
+    fd_(fd), buf_(buf), len_(len) {}
+
+  void flush() {
+    if (len_ == -1) {
+      fprintf(stderr, "FlushThread: closing fd %d\n", fd_);
+      close(fd_);
+    }
+    if (buf_ != NULL) {
+      if (write(fd_, buf_, len_) != len_) {
+        perror("FlushThread write");
+      }
+      delete[] buf_;
+      buf_ = NULL;
+    }
+  }
+};
+
+class FlushThread {
+ public:
+  FlushThread() {
+    pthread_mutex_init(&mutex_, NULL);
+    sem_init(&sem_, 0, 0);
+  }
+
+  ~FlushThread() {
+    // terminate the thread?
+  }
+
+  bool Init() {
+    if (pthread_create(&thread_, NULL, thread_entry, this) != 0) {
+      perror("FlushThread: pthread_create");
+      return false;
+    }
+    return true;
+  }
+
+  void AddEntry(int fd, uint8_t *buf, size_t len) {
+    pthread_mutex_lock(&mutex_);
+    flush_queue_.push_back(FlushEntry(fd, buf, len));
+    pthread_mutex_unlock(&mutex_);
+    sem_post(&sem_);
+#if 0
+    int semval;
+    sem_getvalue(&sem_, &semval);
+    fprintf(stderr, "Flusher: qsize %d sem %d\n", flush_queue_.size(), semval);
+#endif
+  }
+
+ private:
+  static void* thread_entry(void* arg) {
+    FlushThread *self = reinterpret_cast<FlushThread*>(arg);
+
+    fprintf(stderr, "FlushThread: started\n");
+
+    for (;;) {
+      sem_wait(&self->sem_);
+      pthread_mutex_lock(&self->mutex_);
+      if (!self->flush_queue_.empty()) {
+        FlushEntry e = self->flush_queue_.front();
+        self->flush_queue_.pop_front();
+        pthread_mutex_unlock(&self->mutex_);
+        e.flush();
+      } else {
+        pthread_mutex_unlock(&self->mutex_);
+      }
+    }
+  }
+
+  std::deque<FlushEntry> flush_queue_;
+  pthread_mutex_t mutex_;
+  pthread_t thread_;
+  sem_t sem_;
+};
+
+FlushThread flush_thread_;
 
 class Driver: public CameraReceiver {
  public:
   Driver() {
-    output_file_ = NULL;
+    output_fd_ = -1;
     frame_ = 0;
     autosteer_ = false;
   }
 
   bool StartRecording(const char *fname) {
     if (!strcmp(fname, "-")) {
-      output_file_ = stdout;
-      setbuf(stdout, NULL);
+      output_fd_ = fileno(stdout);
     } else {
-      output_file_ = fopen(fname, "wb");
+      output_fd_ = open(fname, O_CREAT|O_TRUNC|O_WRONLY, 0666);
     }
-    if (!output_file_) {
+    if (output_fd_ == -1) {
       perror(fname);
       return false;
     }
@@ -40,19 +131,15 @@ class Driver: public CameraReceiver {
   }
 
   bool IsRecording() {
-    return output_file_ != NULL;
+    return output_fd_ != -1;
   }
 
   void StopRecording() {
-    FILE *f = output_file_;
-    output_file_ = NULL;
-    if (f == NULL) {
+    if (output_fd_ == -1) {
       return;
     }
-    if (f != stdout) {
-      fclose(f);
-    }
-    output_file_ = NULL;
+    flush_thread_.AddEntry(output_fd_, NULL, -1);
+    output_fd_ = -1;
   }
 
   ~Driver() {
@@ -60,14 +147,25 @@ class Driver: public CameraReceiver {
   }
 
   void OnFrame(uint8_t *buf, size_t length) {
-    if (output_file_) {
+    if (output_fd_ != -1) {
       struct timeval t;
       gettimeofday(&t, NULL);
-      fwrite(&t.tv_sec, sizeof(t.tv_sec), 1, output_file_);
-      fwrite(&t.tv_usec, sizeof(t.tv_usec), 1, output_file_);
-      fwrite(&throttle_, sizeof(throttle_), 1, output_file_);
-      fwrite(&steering_, sizeof(steering_), 1, output_file_);
-      fwrite(buf, 1, length, output_file_);
+      size_t flushlen = length + 4+4+2+2+6*4;
+      // copy our frame, push it onto a stack to be flushed
+      // asynchronously to sdcard
+      uint8_t *flushbuf = new uint8_t[flushlen];
+      memcpy(flushbuf, &t.tv_sec, 4);
+      memcpy(flushbuf+4, &t.tv_usec, 4);
+      memcpy(flushbuf+8, &throttle_, 2);
+      memcpy(flushbuf+10, &steering_, 2);
+      memcpy(flushbuf+12, &accel_[0], 4);
+      memcpy(flushbuf+12+4, &accel_[1], 4);
+      memcpy(flushbuf+12+8, &accel_[2], 4);
+      memcpy(flushbuf+24, &gyro_[0], 4);
+      memcpy(flushbuf+24+4, &gyro_[1], 4);
+      memcpy(flushbuf+24+8, &gyro_[2], 4);
+      memcpy(flushbuf+36, buf, length);
+      flush_thread_.AddEntry(output_fd_, flushbuf, flushlen);
     }
 
     // identify yellow lines, fit line, PID steering!
@@ -80,9 +178,9 @@ class Driver: public CameraReceiver {
     for (int y = ytop; y < 240; y++) {
       for (int x = 0; x < 320; x++) {
         uint8_t u = buf[640*480 + y*320 + x];
-        if (u >= 105) continue;
-        uint8_t v = buf[640*480 + 320*240 + y*320 + x];
-        if (v <= 140) continue;
+        if (u >= 90) continue;  // was 105
+        // uint8_t v = buf[640*480 + 320*240 + y*320 + x];
+        // if (v <= 140) continue;
 #if 0
         uint8_t y = buf[y*640 + x*2];
         if (y < 160) continue;
@@ -117,27 +215,30 @@ class Driver: public CameraReceiver {
       sumy2 /= n;
       float beta = (sumxy - sumx*sumy) / (sumy2 - sumy*sumy);
       float alpha = sumx - beta*sumy;
-      fprintf(stderr, "alpha %f beta %f\n", alpha, beta);
+      // fprintf(stderr, "alpha %f beta %f\n", alpha, beta);
       last_side = alpha > 160 ? 1 : -1;
       if (autosteer_) {
         float s = CONST_P * (alpha - 160);
         float s0 = -6500 / 32767.0;
         steering_ = 614.4 - 204.8*(s0 + s);
+        throttle_ = CONST_V;
         pca.SetPWM(0, steering_);
-        pca.SetPWM(1, CONST_V);
+        pca.SetPWM(1, throttle_);
       }
     } else if (autosteer_) {
       // we're lost, so we have to assume we're way off the same side of the
       // screen as last time
-      pca.SetPWM(0, 614.4 - 204.8 * last_side);
-      pca.SetPWM(1, CONST_V - 20);
+      steering_ = 614.4 - 204.8 * last_side;
+      throttle_ = CONST_V - 20;
+      pca.SetPWM(0, steering_);
+      pca.SetPWM(1, throttle_);
     }
   }
 
   bool autosteer_;
 
  private:
-  FILE *output_file_;
+  int output_fd_;
   int frame_;
 };
 
@@ -159,6 +260,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  if (!flush_thread_.Init()) {
+    return 1;
+  }
+
   if (!Camera::Init(640, 480, fps))
     return 1;
 
@@ -172,10 +277,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-
   pca.Init(100);  // 100Hz output
   pca.SetPWM(0, 614);
   pca.SetPWM(1, 614);
+
+  imu.Init();
 
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -188,18 +294,21 @@ int main(int argc, char *argv[]) {
   gettimeofday(&tv, NULL);
   fprintf(stderr, "%d.%06d started camera\n", tv.tv_sec, tv.tv_usec);
 
+  int recording_num = 0;
 
   while (!done) {
     int t = 0, s = 0;
     uint16_t b = 0;
     if (js.ReadInput(&t, &s, &b)) {
       gettimeofday(&tv, NULL);
-      if (b & 0x40) {  // start button: start recording
-        if (driver.StartRecording(argv[1])) {
-          fprintf(stderr, "%d.%06d started recording %s\n", tv.tv_sec, tv.tv_usec, argv[1]);
+      if ((b & 0x40) && !driver.IsRecording()) {  // start button: start recording
+        char fnamebuf[256];
+        snprintf(fnamebuf, sizeof(fnamebuf), "%s-%d.yuv", argv[1], recording_num++);
+        if (driver.StartRecording(fnamebuf)) {
+          fprintf(stderr, "%d.%06d started recording %s\n", tv.tv_sec, tv.tv_usec, fnamebuf);
         }
       }
-      if ((b & 0x30) == 0x30) {
+      if ((b & 0x30) == 0x30 && driver.IsRecording()) {
         driver.StopRecording();
         fprintf(stderr, "%d.%06d stopped recording\n", tv.tv_sec, tv.tv_usec);
       }
@@ -222,6 +331,10 @@ int main(int argc, char *argv[]) {
         throttle_ = 614.4 + 204.8*t / 32767.0;
         pca.SetPWM(1, throttle_);
       }
+    }
+    {
+      float temp;
+      imu.ReadIMU(&accel_, &gyro_, &temp);
     }
     usleep(1000);
   }
