@@ -26,9 +26,11 @@ void Camera::ControlCallback(
 void Camera::BufferCallback(MMAL_PORT_T *port,
                             MMAL_BUFFER_HEADER_T *buffer) {
   if (buffer->length) {
-    mmal_buffer_header_mem_lock(buffer);
-    receiver_->OnFrame(buffer->data, buffer->length);
-    mmal_buffer_header_mem_unlock(buffer);
+    if (receiver_ != NULL) {
+      mmal_buffer_header_mem_lock(buffer);
+      receiver_->OnFrame(buffer->data, buffer->length);
+      mmal_buffer_header_mem_unlock(buffer);
+    }
   }
 
   // release buffer back to the pool
@@ -185,6 +187,7 @@ bool Camera::StopRecord() {
     fprintf(stderr, "failed to stop capture\n");
     return false;
   }
+  receiver_ = NULL;
 
   return true;
 }
