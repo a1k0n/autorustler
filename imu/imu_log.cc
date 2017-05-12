@@ -24,8 +24,6 @@ int main() {
   IMU imu(i2c);
   printf("# t gx gy gz mx my mz ax ay az\n");
 
-  bool mag_calibrated = imu.LoadMagCalibration();
-
   while (!done) {
     timeval tv0;
     gettimeofday(&tv0, NULL);
@@ -44,7 +42,9 @@ int main() {
     Eigen::Vector3f accel, gyro;
     float temp;
     if (imu.ReadIMU(&accel, &gyro, &temp)) {
-      printf("%f %f %f\n", gyro[0], gyro[1], gyro[2]);
+      printf("%+0.4f %+0.4f %+0.4f | %+0.4f %+0.4f %+0.4f\n",
+          gyro[0], gyro[1], gyro[2],
+          accel[0], accel[1], accel[2]);
     }
 #endif
     timeval tv;

@@ -26,11 +26,27 @@ bool IMU::Init() {
   i2c_.Write(0x68, 107, 1);  // use gyro clock
   i2c_.Write(0x68, 108, 0);  // enable accel + gyro
   i2c_.Write(0x68, 55, 0x32);  // enable bypass, int pin latch
-  i2c_.Write(0x68, 0x1a, 0x03);  // set filters
-  i2c_.Write(0x68, 0x19, 4);  // samplerate divisor
-  i2c_.Write(0x68, 0x1a, 0);  // accel filter
-  i2c_.Write(0x68, 0x1b, 0);  // gyro filter
-  i2c_.Write(0x68, 0x38, 1);  // DRDY int enable
+
+  // samplerate divisor 4 -> 1kHz / 5 = 200Hz samplerate
+  i2c_.Write(0x68, 25, 0x04);
+
+  // dlpf_cfg = 3, no fsync; 41Hz gyro bandwidth, 5.9ms delay
+  // 1kHz base sample rate
+  i2c_.Write(0x68, 26, 0x03);
+
+  // fchoice: 11 (enables filter above)
+  // gyro 1000dec/sec full scale
+  // test  fs   - fchoice_b
+  // 000 | 10 | 0 | 00
+  i2c_.Write(0x68, 27, 0x10);
+
+  // accel_fs_sel +/- 2g (00), default
+
+  // a_dlpfcfg = 3, 44.8Hz accel bw, 4.88ms delay
+  i2c_.Write(0x68, 29, 0x03);
+
+
+  i2c_.Write(0x68, 56, 1);  // DRDY int enable (for checking timing on scope)
 
   uint8_t id;
   i2c_.Read(0x68, 117, 1, &id);  // whoami
@@ -52,9 +68,11 @@ bool IMU::Init() {
   fprintf(stderr, "AK8975C mag adjust: %f %f %f\r\n",
          magadj_[0], magadj_[1], magadj_[2]);
 
+#if 0
   mag_calibrated_ = LoadMagCalibration();
+#endif
 
-  return true;  // FIXME
+  return true;
 }
 
 bool IMU::ReadMag(Vector3f *mag) {
@@ -73,6 +91,7 @@ bool IMU::ReadMag(Vector3f *mag) {
   return false;
 }
 
+#if 0
 // Fits an ellipsoid to the input data using least-squares.
 //
 // Solution takes the same amount of time no matter how many datapoints were
@@ -163,6 +182,18 @@ bool IMU::SaveMagCalibration() {
   return true;
 }
 
+bool IMU::ReadCalibrated(IMUState *state) {
+  if (ReadMag(&state->N)) {
+    float temp;
+    ReadIMU(&state->g, &state->w, &temp);
+    if (CalibrateMag(state->N, mag_calibrated_, &state->N)) {
+      return true;
+    }
+  }
+  return false;
+}
+#endif
+
 bool IMU::ReadIMU(Vector3f *accel, Vector3f *gyro, float *temp) {
   uint8_t readbuf[14];
   // mpu-9150 accel & gyro
@@ -177,22 +208,14 @@ bool IMU::ReadIMU(Vector3f *accel, Vector3f *gyro, float *temp) {
     // we are in 16384 LSB/g scale (+/- 2g)
     *accel = Vector3f(ax, ay, az) / 16384.0;
     // TODO: temp calibration
-    // we are in +/- 250 degrees/second full scale range
+    // we are in +/- 1000 degrees/second full scale range
     // return radians/second
-    *gyro = Vector3f(gx, gy, gz) * 250.0 * M_PI / (180 * 32768.0);
-    *temp = t * (1.0/340.0) + 35;  // can't possibly be right
-    return true;
-  }
-  return false;
-}
+    *gyro = Vector3f(gx, gy, gz) * 1000.0 * M_PI / (180 * 32768.0);
 
-bool IMU::ReadCalibrated(IMUState *state) {
-  if (ReadMag(&state->N)) {
-    float temp;
-    ReadIMU(&state->g, &state->w, &temp);
-    if (CalibrateMag(state->N, mag_calibrated_, &state->N)) {
-      return true;
-    }
+    // the datasheet is completely useless for temperature
+    *temp = t * (1.0/333.87) + 21;
+
+    return true;
   }
   return false;
 }
