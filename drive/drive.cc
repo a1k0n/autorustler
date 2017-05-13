@@ -11,10 +11,10 @@
 
 #include "cam/cam.h"
 #include "car/pca9685.h"
-#include "gpio/i2c.h"
-#include "input/js.h"
-#include "imu/imu.h"
 #include "drive/controller.h"
+#include "gpio/i2c.h"
+#include "imu/imu.h"
+#include "input/js.h"
 
 volatile bool done = false;
 uint16_t throttle_ = 614, steering_ = 614;
@@ -170,8 +170,8 @@ class Driver: public CameraReceiver {
     }
 
     controller_.UpdateState(buf, length, throttle_, steering_, accel_, gyro_);
-    if (autosteer_) {
-      controller_.GetControl(&steering_, &throttle_);
+
+    if (autosteer_ && controller_.GetControl(&steering_, &throttle_)) {
       pca.SetPWM(0, steering_);
       pca.SetPWM(1, throttle_);
     }
@@ -231,8 +231,9 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "%d.%06d camera on @%d fps\n", tv.tv_sec, tv.tv_usec, fps);
 
   Driver driver;
-  if (!Camera::StartRecord(&driver))
+  if (!Camera::StartRecord(&driver)) {
     return 1;
+  }
 
   gettimeofday(&tv, NULL);
   fprintf(stderr, "%d.%06d started camera\n", tv.tv_sec, tv.tv_usec);
