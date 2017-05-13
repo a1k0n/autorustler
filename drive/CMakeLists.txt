@@ -1,2 +1,2 @@
-add_executable(drive drive.cc)
+add_executable(drive drive.cc udplane.cc controller.cc)
 target_link_libraries(drive car cam mmal input gpio imu)

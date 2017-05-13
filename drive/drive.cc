@@ -14,6 +14,7 @@
 #include "gpio/i2c.h"
 #include "input/js.h"
 #include "imu/imu.h"
+#include "drive/controller.h"
 
 volatile bool done = false;
 uint16_t throttle_ = 614, steering_ = 614;
@@ -147,7 +148,7 @@ class Driver: public CameraReceiver {
   }
 
   void OnFrame(uint8_t *buf, size_t length) {
-    if (output_fd_ != -1) {
+    if (IsRecording()) {
       struct timeval t;
       gettimeofday(&t, NULL);
       size_t flushlen = length + 4+4+2+2+6*4;
@@ -168,68 +169,9 @@ class Driver: public CameraReceiver {
       flush_thread_.AddEntry(output_fd_, flushbuf, flushlen);
     }
 
-    // identify yellow lines, fit line, PID steering!
-    // simple AF
-    // we don't even need to undistort for that, though we could
-
-    const int ytop = 274 / 2;
-    // linear regression statistics:
-    float sumxy = 0, sumx = 0, sumy = 0, sumy2 = 0, n = 0;
-    for (int y = ytop; y < 240; y++) {
-      for (int x = 0; x < 320; x++) {
-        uint8_t u = buf[640*480 + y*320 + x];
-        if (u >= 90) continue;  // was 105
-        // uint8_t v = buf[640*480 + 320*240 + y*320 + x];
-        // if (v <= 140) continue;
-#if 0
-        uint8_t y = buf[y*640 + x*2];
-        if (y < 160) continue;
-#endif
-        // add x, y to linear regression
-        sumx += x;
-        sumy += (240.-y);
-        sumxy += (240.-y)*x;
-        sumy2 += (240.-y)*(240.-y);
-        n += 1;
-      }
-    }
-#if 0
-    sumx *= 0.5;
-    sumy *= 0.5;
-    sumxy *= 0.5;
-    sumy2 *= 0.5;
-    n *= 0.5;
-#endif
-    static int last_side = 0;
-
-    static const float CONST_P = 1.0 / 500.0;
-    static const float CONST_V = 700;  // safe speed: 700
-
-    if (n > 5) {
-      // intercept is the projection of the line on the bottom of the screen
-      // which is our steering error
-      // the slope also determines our angle offset
-      sumx /= n;
-      sumy /= n;
-      sumxy /= n;
-      sumy2 /= n;
-      float beta = (sumxy - sumx*sumy) / (sumy2 - sumy*sumy);
-      float alpha = sumx - beta*sumy;
-      // fprintf(stderr, "alpha %f beta %f\n", alpha, beta);
-      last_side = alpha > 160 ? 1 : -1;
-      if (autosteer_) {
-        float s = CONST_P * (alpha - 160);
-        float s0 = -6500 / 32767.0;
-        steering_ = 614.4 - 204.8*(s0 + s);
-        throttle_ = CONST_V;
-        pca.SetPWM(0, steering_);
-        pca.SetPWM(1, throttle_);
-      }
-    } else if (autosteer_) {
-      // we're lost, so we have to assume we're way off the same side of the
-      // screen as last time
-      steering_ = 614.4 - 204.8 * last_side;
-      throttle_ = CONST_V - 20;
+    controller_.UpdateState(buf, length, throttle_, steering_, accel_, gyro_);
+    if (autosteer_) {
+      controller_.GetControl(&steering_, &throttle_);
       pca.SetPWM(0, steering_);
       pca.SetPWM(1, throttle_);
     }
@@ -240,6 +182,7 @@ class Driver: public CameraReceiver {
  private:
   int output_fd_;
   int frame_;
+  DriveController controller_;
 };
 
 int main(int argc, char *argv[]) {
