@@ -169,20 +169,24 @@ class Driver: public CameraReceiver {
       flush_thread_.AddEntry(output_fd_, flushbuf, flushlen);
     }
 
-    controller_.UpdateState(buf, length, throttle_, steering_, accel_, gyro_);
+    float u_a = throttle_ / 204.8 - 3.0;
+    float u_s = steering_ / 204.8 - 3.0;
+    controller_.UpdateState(buf, length, u_a, u_s, accel_, gyro_);
 
-    if (autosteer_ && controller_.GetControl(&steering_, &throttle_)) {
+    if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
+      steering_ = std::max(0, (int) ((u_s + 3.0) * 204.8));
+      throttle_ = std::max(0, (int) ((u_a + 3.0) * 204.8));
       pca.SetPWM(0, steering_);
       pca.SetPWM(1, throttle_);
     }
   }
 
   bool autosteer_;
+  DriveController controller_;
 
  private:
   int output_fd_;
   int frame_;
-  DriveController controller_;
 };
 
 int main(int argc, char *argv[]) {
@@ -267,6 +271,11 @@ int main(int argc, char *argv[]) {
           driver.autosteer_ = false;
           fprintf(stderr, "%d.%06d autosteer OFF\n", tv.tv_sec, tv.tv_usec);
         }
+      }
+
+      if (b & 0x01) {
+        driver.controller_.ResetState();
+        fprintf(stderr, "reset kalman filter\n");
       }
 
       if (!driver.autosteer_) {

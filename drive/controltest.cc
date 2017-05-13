@@ -21,18 +21,13 @@ int main() {
     std::cout << "controls: " << u_a << " " << u_s
       << " accel " << a.transpose() << " gyro " << g.transpose() << std::endl;
 
-    c.PredictStep(u_a, u_s, 1.0/30.0);
-    std::cout << "predict x" << c.x_.transpose() << std::endl;
-    std::cout << "predict P" << c.P_.diagonal().transpose() << std::endl;
-    c.UpdateCamera(framebuf+36);
-    std::cout << "camera x" << c.x_.transpose() << std::endl;
-    std::cout << "camera P" << c.P_.diagonal().transpose() << std::endl;
-    c.UpdateIMU(a, g, u_a);
-    std::cout << "IMU x" << c.x_.transpose() << std::endl;
-    std::cout << "IMU P" << c.P_.diagonal().transpose() << std::endl;
+    c.UpdateState(framebuf+36, sizeof(framebuf) - 36, u_a, u_s, a, g);
 
-    // just enforce boundaries
-    c.UpdateState(framebuf+36, sizeof(framebuf), u_a, u_s, a, g);
+    std::cout << "x " << c.x_.transpose() << std::endl;
+    std::cout << "P " << c.P_.diagonal().transpose() << std::endl;
+
+    c.GetControl(&u_a, &u_s);
+    std::cout << "control " << u_a << " " << u_s << std::endl;
   }
 }
 

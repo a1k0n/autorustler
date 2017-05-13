@@ -14,7 +14,7 @@ class DriveController {
       const Eigen::Vector3f &accel,
       const Eigen::Vector3f &gyro, float dt = 1.0/30.0);
 
-  bool GetControl(uint16_t *steer_out, uint16_t *throttle_out);
+  bool GetControl(float *throttle_out, float *steering_out);
 
   void ResetState();
 

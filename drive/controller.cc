@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <iostream>
 
 #include "drive/controller.h"
@@ -14,12 +15,19 @@ using Eigen::VectorXf;
 using Eigen::Lower;
 using Eigen::SelfAdjointView;
 
-// TODO: remove this
-static const float CONST_P = 1.0 / 500.0;
-static const float CONST_V = 700;  // safe speed: 700
+static const uint8_t U_THRESH = 100;
+
+static const float TRACTION_LIMIT = 3;  // maximum v*w product
+static float MAX_THROTTLE = 1.0;
+static const float kpy = 0.01;
+static const float kvy = 0.6;
+
+static const float LANE_OFFSET = 4;
+
 
 // EKF state order, 13-dimensional:
 // ye, psie, w, v, k, Cv, Tv, Cs, Ts, mu_s, mu_g, mu_ax, mu_ay
+// 2.35488   -3.35807   -1.25895  -0.711344   0.234494   0.134446 -0.0395876    1.09513
 
 DriveController::DriveController(): x_(13), P_(13, 13) {
   ResetState();
@@ -29,7 +37,7 @@ void DriveController::ResetState() {
   // set up initial state
   x_ << 0, 0, 0, 0, 0,
      2.3, 0, -1.2, -0.7,  // Cv and Cs are w.r.t. 16-bit ints
-     0, 0, 0, 0;
+     0.2, 0, 0, 0;
   P_.setZero();
   P_.diagonal() << 25., 1., 0.01, 0.01, 0.0001,
     1., 0.01, 0.01, 0.01,
@@ -110,7 +118,7 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
     for (int x = 0; x < 320; x++, bufidx++, udidx++) {
       uint8_t u = yuv[640*480 + bufidx];
       // uint8_t v = yuv[640*480 + 320*240 + bufidx];
-      if (u >= 90) continue;  // was 105
+      if (u >= U_THRESH) continue;  // was 105
       // if (v <= 140) continue;
       
       float pu = udplane[udidx*2];
@@ -140,9 +148,9 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   std::cout << "XTy " << regXTy.transpose() << "\n";
   std::cout << "yTy " << regyTy << "\n";
   std::cout << "XTXinv\n" << XTXinv << "\n";
-#endif
   std::cout << "B " << B << "\n";
   std::cout << "r2 " << r2 << "\n";
+#endif
 
   Matrix2f Rk = XTXinv * r2;
   Rk(1, 1) += 0.01;  // slope is a bit iffy; add a bit of noise covariance
@@ -165,10 +173,12 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   Matrix2f S = Hk * P_ * Hk.transpose() + Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
+#if 0
   std::cout << "mb_K\n" << K << "\n";
   std::cout << "y_k\n" << y_k.transpose()
     << " pred " << (y_k - B).transpose()
     << " meas " << B.transpose() << "\n";
+#endif
 
   // finally, state update via kalman gain
   x_.noalias() += K * y_k;
@@ -205,11 +215,12 @@ void DriveController::UpdateIMU(
   S.diagonal() += Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
+#if 0
   std::cout << "IMU_K\n" << K << "\n";
   std::cout << "y_k\n" << yk.transpose()
     << " pred " << zk.transpose()
     << " meas " << (yk + zk).transpose() << "\n";
-
+#endif
 
   x_.noalias() += K * yk;
   P_ = (MatrixXf::Identity(13, 13) - K*Hk) * P_;
@@ -220,6 +231,28 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
       const Vector3f &accel,
       const Vector3f &gyro, float dt) {
 
+  if (isinf(x_[0]) || isnan(x_[0])) {
+    fprintf(stderr, "WARNING: kalman filter diverged to inf/NaN! resetting!\n");
+    ResetState();
+  }
+
+  PredictStep(throttle_in, steering_in, 1.0/30.0);
+#if 0
+  std::cout << "predict x" << x_.transpose() << std::endl;
+  std::cout << "predict P" << P_.diagonal().transpose() << std::endl;
+#endif
+  if (yuvlen == 640*480 + 320*240*2) {
+    UpdateCamera(yuv);
+  } else {
+    fprintf(stderr, "DriveController::UpdateState: invalid yuvlen %ld\n",
+        yuvlen);
+  }
+#if 0
+  std::cout << "camera x" << x_.transpose() << std::endl;
+  std::cout << "camera P" << P_.diagonal().transpose() << std::endl;
+#endif
+  UpdateIMU(accel, gyro, throttle_in);
+
   if (x_[1] > M_PI/2) {
     x_[1] -= M_PI;
   } else if (x_[1] < -M_PI/2) {
@@ -228,9 +261,55 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
 
   x_[3] = fabsf(x_[3]);  // (velocity) dumb hack: keep us from going backwards when we're confused
   x_[4] = fmax(fmin(x_[4], 0.3), -0.3);  // clip curvature so it doesn't go too extreme
+
+  std::cout << "x " << x_.transpose() << std::endl;
+  // std::cout << "P " << P_.diagonal().transpose() << std::endl;
 }
 
-bool DriveController::GetControl(uint16_t *steer_out, uint16_t *throttle_out) {
-  return false;
+bool DriveController::GetControl(float *throttle_out, float *steering_out) {
+  float ye = x_[0], psie = x_[1], w = x_[2], v = x_[3], k = x_[4];
+  float Cv = x_[5], Tv = x_[6], Cs = x_[7], Ts = x_[8];
+  float mu_s = x_[9], mu_g = x_[10], mu_ax = x_[11], mu_ay = x_[12];
+  float eCv = exp(Cv), eTv = exp(Tv), eCs = exp(Cs), eTs = exp(Ts);
+
+  float cpsi = cos(psie), spsi = sin(psie);
+  float dx = cpsi / (1.0 - k*ye);
+  float sign = 1;  // should be sign(v*dx) but we're not handling backwards motion
+
+#if 0
+  if (fabs(k) >= 0.1) {
+    // hard limit on tight curves
+    MAX_THROTTLE = 0.4;
+  }
+#endif
+
+  // Alain Micaelli, Claude Samson. Trajectory tracking for unicycle-type and
+  // two-steering-wheels mobile robots. [Research Report] RR-2097, INRIA. 1993.
+  // <inria-00074575>
+  float w_target = v * dx * ((ye - LANE_OFFSET) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi*sign) - 0.5*k);
+
+  float cur_steer = w / v;
+  printf("w_target %f w %f traction_limit %f v %f y %f psi %f steer %f\n",
+      w_target, w, TRACTION_LIMIT, v, ye, psie, cur_steer);
+  //  if (fabsf(w_target) < TRACTION_LIMIT) {
+  // good news, we can floor it!
+  // we could try to use eTs here to steer more aggressively, but it's not a
+  // real great model
+  // could do one-step lookahead on v, but nah
+  *steering_out = fmin(fmax(mu_s + w_target / (v * eCs), -1), 1);
+
+  //    *throttle_out = MAX_THROTTLE;
+  //  } else {
+  // as v decreases we should come back within the traction limit
+  //    float sign = w_target > 0 ? 1 : -1;
+  //    *steering_out = sign;
+  // refine limited w target
+  float delta = eCs * (*steering_out - mu_s);  // actual steering after limiting
+  float v_target = fabsf(TRACTION_LIMIT / delta);
+  // todo: more aggressive braking
+  *throttle_out = fmin(fmax(v_target / eCv, -1), MAX_THROTTLE);
+
+  printf("  throttle %f steer %f\n", *throttle_out, *steering_out);
+  return true;
 }
 
