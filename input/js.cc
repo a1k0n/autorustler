@@ -68,6 +68,7 @@ bool JoystickInput::ReadInput(int *throttle, int *steering, uint16_t *buttons) {
     uint8_t number = buf[7];
     if (type == 0x01) {  // button
       switch (number) {
+#if 0
         case 0:  // A, steer trim left
           steertrim_ -= 100;
           newvalue = true;
@@ -76,6 +77,7 @@ bool JoystickInput::ReadInput(int *throttle, int *steering, uint16_t *buttons) {
           steertrim_ += 100;
           newvalue = true;
           break;
+#endif
         default:
           if (value) {
             buttons_ |= (1 << number);

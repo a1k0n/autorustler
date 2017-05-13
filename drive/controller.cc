@@ -17,10 +17,10 @@ using Eigen::SelfAdjointView;
 
 static const uint8_t U_THRESH = 100;
 
-static const float TRACTION_LIMIT = 3;  // maximum v*w product
-static float MAX_THROTTLE = 1.0;
-static const float kpy = 0.01;
-static const float kvy = 0.6;
+static const float TRACTION_LIMIT = 4;  // maximum v*w product
+static float MAX_THROTTLE = 0.8;
+static const float kpy = 0.005;
+static const float kvy = 0.7;
 
 static const float LANE_OFFSET = 4;
 
@@ -286,7 +286,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   // Alain Micaelli, Claude Samson. Trajectory tracking for unicycle-type and
   // two-steering-wheels mobile robots. [Research Report] RR-2097, INRIA. 1993.
   // <inria-00074575>
-  float w_target = v * dx * ((ye - LANE_OFFSET) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi*sign) - 0.5*k);
+  float w_target = v * dx * ((ye - LANE_OFFSET) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi*sign) - k);
 
   float cur_steer = w / v;
   printf("w_target %f w %f traction_limit %f v %f y %f psi %f steer %f\n",

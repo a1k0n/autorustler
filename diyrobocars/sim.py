@@ -31,31 +31,40 @@ def draw_track(img, P):
     trackproj = np.dot(P, trackx)
     trackproj[:2] /= trackproj[3]
     trackproj *= 16
+    # draw dotted centerline
     for i in range(0, N-1, 2):
         cv2.line(img,
                  (int(trackproj[0, i]), int(trackproj[1, i])),
                  (int(trackproj[0, i+1]), int(trackproj[1, i+1])),
-                 (0, 0, 0), 3, shift=4)
+                 (128, 128, 128), 3, shift=4)
         cv2.line(img,
                  (int(trackproj[0, i]), int(trackproj[1, i])),
                  (int(trackproj[0, i+1]), int(trackproj[1, i+1])),
                  (0, 255, 255), 1, shift=4)
-    trackproj = np.dot(P, leftline)
-    trackproj[:2] /= trackproj[3]
-    trackproj *= 16
+    
+    # draw left line
+    trackprojL = np.dot(P, leftline)
+    trackprojL[:2] /= trackprojL[3]
+    trackprojL *= 16
     for i in range(0, N-1):
         cv2.line(img,
-                 (int(trackproj[0, i]), int(trackproj[1, i])),
-                 (int(trackproj[0, i+1]), int(trackproj[1, i+1])),
+                 (int(trackprojL[0, i]), int(trackprojL[1, i])),
+                 (int(trackprojL[0, i+1]), int(trackprojL[1, i+1])),
                  (255, 255, 255), 1, shift=4)
-    trackproj = np.dot(P, rightline)
-    trackproj[:2] /= trackproj[3]
-    trackproj *= 16
+    # right line
+    trackprojR = np.dot(P, rightline)
+    trackprojR[:2] /= trackprojR[3]
+    trackprojR *= 16
     for i in range(0, N-1):
         cv2.line(img,
-                 (int(trackproj[0, i]), int(trackproj[1, i])),
-                 (int(trackproj[0, i+1]), int(trackproj[1, i+1])),
+                 (int(trackprojR[0, i]), int(trackprojR[1, i])),
+                 (int(trackprojR[0, i+1]), int(trackprojR[1, i+1])),
                  (255, 255, 255), 1, shift=4)
+    # start line
+    cv2.line(img,
+             (int(trackprojL[0, 0]), int(trackprojL[1, 0])),
+             (int(trackprojR[0, 0]), int(trackprojR[1, 0])),
+             (255, 255, 255), 2, shift=4)
 
 
 def get_curvature(s, interp=False):
@@ -168,12 +177,12 @@ def draw_frame(X, u, vidout=None):
     draw_track(frame, P)
 
     # show virtual curvature on track
-    K = get_curvature(s)
+    K = get_curvature(s, True)
     r = 1.0 / K
     cv2.circle(frame,
                (int(16*(320 + 3*r - 3*ye)), 16*240),
                int(16*3*np.abs(r)),
-               (255, 0, 0), 1, shift=4)
+               (255, 255, 0), 1, shift=4)
 
     # draw the car CG
     C = cv2.Rodrigues(np.float32([0, 0, psi]))[0][:2, :2]
@@ -191,6 +200,9 @@ def draw_frame(X, u, vidout=None):
              (int(u[0] * 300 + 320), 460), (320, 460), (255, 255, 255), 5)
     cv2.line(frame,
              (int(u[1] * 300 + 320), 470), (320, 470), (255, 255, 0), 5)
+
+    cv2.putText(frame, "s: %0.1f" % s, (0, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(frame, "v: %0.1f" % vt, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
     if vidout is not None:
         vidout.write(frame)
@@ -400,20 +412,22 @@ def pid_control(X):
     # return k1*(v' - v), k2*(w' - w)
 
     kpy = 0.01
-    kvy = 0.2
+    kvy = 0.4
     ye, psi, v, w, s = X
     cpsi = np.cos(psi)
     spsi = np.sin(psi)
     k = get_curvature(s, True)
     dx = cpsi / (1.0 - k*ye)
-    w_target = v * dx * (-ye * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi) + k)
+    w_target = v * dx * (-(ye + 10) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi) + k)
 
     v_target = speed_const
 
     if np.abs(w_target) <= steering_maxrate:
         # max acceleration
-        print 'max accel', w_target, w, (w_target - w) / steering_const
+        # print 'max accel', w_target, w, (w_target - w) / steering_const
         return 1.0, np.clip((w_target - w) / (v * steering_const + 1e-6), -1, 1)
+
+    # w_target / vt = steering_maxrate
 
     v_target = w_target / steering_maxrate
     print 'w_target', w_target, 'v_target', v_target
@@ -423,21 +437,29 @@ def pid_control(X):
 def sim():
     vidout = cv2.VideoWriter("sim.h264", cv2.VideoWriter_fourcc(
         'X', '2', '6', '4'), 30, (640, 480), True)
-    maxR = 0
     xs = []
     us = []
-    while True:
+    Rs = []
+    done = False
+    episodes = []
+    while not done:
         X = np.zeros(5)
-        X[0] = np.random.randn()*5
-        X[1] = np.random.randn()*0.2
+        X[0] = np.clip(np.random.randn()*10, -18, 18)  # initial ye
+        X[1] = np.random.randn()*0.2  # initial psi
+        X[2] = np.random.rand() * speed_const  # initial v
+        if np.random.rand() > 0.0:  # 30% of the time, start at beginning
+            # X[4] = np.random.rand() * track.shape[1]  # initial s
+            X[4] = np.random.rand() * 5 + 70  # initial s
+        s0 = X[4]
         accel, steering = 1.0, 0.1
         steps = 0
-        while True:   # X[4] < track.shape[1]:
+        while True:
             #if X[4] > 40:
             draw_frame(X, [accel, steering], vidout)
             k = cv2.waitKey(10)
             if k == ord('q'):
-                return
+                done = True
+                break
             # X[4] += 0.1
             # print 'K', X[5]
             # steering = np.clip(X[2] * X[5] / steering_const - 0.0001*X[0], -1, 1)
@@ -457,19 +479,28 @@ def sim():
             # print accel, steering, R
             # actor_critic_update(X, A, R, newX)
             X = newX
-            #if np.abs(newX[0]) > 20:
-            #    # terminal state
+            if np.abs(newX[0]) > 20:
+                # terminal state
+                Rs.append([-1])  # negative terminal state
+                break
+            #if X[4] >= 80:  # track.shape[1] - 1:  # positive terminal state
+            #    Rs.append([1])
             #    break
+            Rs.append([0])
             steps += 1
-        maxR = max(X[4], maxR)
-        print 'episode reward', X[4], 'max', maxR
+        if not done:
+            episodes.append(np.hstack([xs, us, Rs]))
+            xs = []
+            us = []
+            Rs = []
+
+        ds = track.shape[1] - 1 - s0
+        print 'episode reward:', steps, 'steps /', ds, float(steps)/ds
         actor_critic_batch_update()
-        break
 
     # print "s: %0.1f ye %0.2f psi %0.3f vt %0.1f" % (X[4], X[0], X[1], X[2])
 
-    open("LMPCdata.pkl", "w").write(
-        pickle.dumps([xs, us]))
+    open("episodes.pkl", "w").write(pickle.dumps(episodes))
 
 if __name__ == '__main__':
     sim()
