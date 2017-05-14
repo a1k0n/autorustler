@@ -292,7 +292,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   // Alain Micaelli, Claude Samson. Trajectory tracking for unicycle-type and
   // two-steering-wheels mobile robots. [Research Report] RR-2097, INRIA. 1993.
   // <inria-00074575>
-  float w_target = v * dx * ((ye - LANE_OFFSET) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi*sign) - k);
+  float w_target = v * dx * ((ye - LANE_OFFSET) * dx * kpy*cpsi + spsi*(-k*spsi - kvy*cpsi*sign) - k);
 
   float cur_steer = w / v;
   printf("w_target %f w %f traction_limit %f v %f y %f psi %f steer %f\n",
