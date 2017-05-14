@@ -256,7 +256,7 @@ int main(int argc, char *argv[]) {
           fprintf(stderr, "%d.%06d started recording %s\n", tv.tv_sec, tv.tv_usec, fnamebuf);
         }
       }
-      if ((b & 0x30) == 0x30 && driver.IsRecording()) {
+      if (b & 0x20 && driver.IsRecording()) {
         driver.StopRecording();
         fprintf(stderr, "%d.%06d stopped recording\n", tv.tv_sec, tv.tv_usec);
       }

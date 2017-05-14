@@ -15,14 +15,20 @@ using Eigen::VectorXf;
 using Eigen::Lower;
 using Eigen::SelfAdjointView;
 
-static const uint8_t U_THRESH = 100;
+static const uint8_t U_THRESH = 112;
 
-static const float TRACTION_LIMIT = 4;  // maximum v*w product
-static float MAX_THROTTLE = 0.8;
-static const float kpy = 0.005;
-static const float kvy = 0.7;
+static float MAX_THROTTLE = 1.0;
 
-static const float LANE_OFFSET = 4;
+// static const float TRACTION_LIMIT = 3.4;  // maximum v*w product
+// static const float kpy = 0.05;
+
+static const float TRACTION_LIMIT = 2.5;  // maximum v*w product
+static const float kpy = 0.05;
+
+static const float kvy = 0.4;
+// static const float kvy = 0.0;
+
+static const float LANE_OFFSET = 0;
 
 
 // EKF state order, 13-dimensional:
@@ -141,7 +147,7 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   Matrix2f XTXinv = regXTX.inverse();
   Vector2f B = XTXinv * regXTy;
   float r2 = B.transpose().dot(regXTX * B) - 2*B.dot(regXTy) + regyTy;
-  r2 /= regN;
+  // r2 /= regN;
 
 #if 0
   std::cout << "XTX\n" << regXTX << "\n";
