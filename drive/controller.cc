@@ -16,14 +16,15 @@ using Eigen::Lower;
 using Eigen::SelfAdjointView;
 
 static const uint8_t U_THRESH = 112;
+static const uint8_t V_THRESH = 135;
 
-static float MAX_THROTTLE = 1.0;
+static float MAX_THROTTLE = 0.9;
 
 // static const float TRACTION_LIMIT = 3.4;  // maximum v*w product
 // static const float kpy = 0.05;
 
 static const float TRACTION_LIMIT = 2.5;  // maximum v*w product
-static const float kpy = 0.05;
+static const float kpy = 0.025;
 
 static const float kvy = 0.4;
 // static const float kvy = 0.0;
@@ -110,8 +111,8 @@ void DriveController::PredictStep(
 
 void DriveController::UpdateCamera(const uint8_t *yuv) {
   // linear regression on yellow pixels in undistorted/reprojected ground plane
-  Matrix2f regXTX = Matrix2f::Zero();
-  Vector2f regXTy = Vector2f::Zero();
+  Matrix3f regXTX = Matrix3f::Zero();
+  Vector3f regXTy = Vector3f::Zero();
   double regyTy = 0;
   int regN = 0;
 
@@ -123,15 +124,15 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   for (int y = 0; y < 240 - udplane_ytop; y++) {
     for (int x = 0; x < 320; x++, bufidx++, udidx++) {
       uint8_t u = yuv[640*480 + bufidx];
-      // uint8_t v = yuv[640*480 + 320*240 + bufidx];
-      if (u >= U_THRESH) continue;  // was 105
-      // if (v <= 140) continue;
+      uint8_t v = yuv[640*480 + 320*240 + bufidx];
+      if (u >= U_THRESH) continue;
+      if (v <= V_THRESH) continue;
       
       float pu = udplane[udidx*2];
       float pv = udplane[udidx*2 + 1];
 
       // add x, y to linear regression
-      Vector2f regX(1, pv);
+      Vector3f regX(1, pv, pv*pv);
       regXTX.noalias() += regX * regX.transpose();
       regXTy.noalias() += regX * pu;
       regyTy += pu * pu;
@@ -144,8 +145,8 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
     return;
   }
 
-  Matrix2f XTXinv = regXTX.inverse();
-  Vector2f B = XTXinv * regXTy;
+  Matrix3f XTXinv = regXTX.inverse();
+  Vector3f B = XTXinv * regXTy;
   float r2 = B.transpose().dot(regXTX * B) - 2*B.dot(regXTy) + regyTy;
   // r2 /= regN;
 
@@ -158,8 +159,8 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   std::cout << "r2 " << r2 << "\n";
 #endif
 
-  Matrix2f Rk = XTXinv * r2;
-  Rk(1, 1) += 0.01;  // slope is a bit iffy; add a bit of noise covariance
+  Matrix3f Rk = XTXinv * r2;
+  // Rk(1, 1) += 0.01;  // slope is a bit iffy; add a bit of noise covariance
 
   // ok, we've obtained our linear fit B and our measurement covariance Rk
   // now do the sensor fusion step
@@ -167,22 +168,22 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   float Cv = x_[5], Tv = x_[6], Cs = x_[7], Ts = x_[8];
   float mu_s = x_[9], mu_g = x_[10], mu_ax = x_[11], mu_ay = x_[12];
 
-  Vector2f y_k = B - Vector2f(ye / cos(psie), tan(psie));
-  MatrixXf Hk(2, 13);
+  Vector3f y_k = B - Vector3f(ye / cos(psie), tan(psie), -2*k);
+  MatrixXf Hk(3, 13);
   float tan_psi = tan(psie);
   float sec_psi = 1.0/cos(psie);
   Hk <<
     sec_psi, ye*tan_psi*sec_psi, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, sec_psi*sec_psi, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0;
 
-    0, sec_psi*sec_psi, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-
-  Matrix2f S = Hk * P_ * Hk.transpose() + Rk;
+  Matrix3f S = Hk * P_ * Hk.transpose() + Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
 #if 0
   std::cout << "mb_K\n" << K << "\n";
   std::cout << "y_k\n" << y_k.transpose()
-    << " pred " << (y_k - B).transpose()
+    << " pred " << (B - y_k).transpose()
     << " meas " << B.transpose() << "\n";
 #endif
 

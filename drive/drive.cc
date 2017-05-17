@@ -116,6 +116,7 @@ class Driver: public CameraReceiver {
     output_fd_ = -1;
     frame_ = 0;
     autosteer_ = false;
+    gettimeofday(&last_t_, NULL);
   }
 
   bool StartRecording(const char *fname) {
@@ -148,9 +149,9 @@ class Driver: public CameraReceiver {
   }
 
   void OnFrame(uint8_t *buf, size_t length) {
+    struct timeval t;
+    gettimeofday(&t, NULL);
     if (IsRecording()) {
-      struct timeval t;
-      gettimeofday(&t, NULL);
       size_t flushlen = length + 4+4+2+2+6*4;
       // copy our frame, push it onto a stack to be flushed
       // asynchronously to sdcard
@@ -171,7 +172,8 @@ class Driver: public CameraReceiver {
 
     float u_a = throttle_ / 204.8 - 3.0;
     float u_s = steering_ / 204.8 - 3.0;
-    controller_.UpdateState(buf, length, u_a, u_s, accel_, gyro_);
+    float dt = t.tv_sec - last_t_.tv_sec + (t.tv_usec - last_t_.tv_usec) * 1e-6;
+    controller_.UpdateState(buf, length, u_a, u_s, accel_, gyro_, dt);
 
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
       steering_ = std::max(0, (int) ((u_s + 3.0) * 204.8));
@@ -187,6 +189,7 @@ class Driver: public CameraReceiver {
  private:
   int output_fd_;
   int frame_;
+  struct timeval last_t_;
 };
 
 int main(int argc, char *argv[]) {

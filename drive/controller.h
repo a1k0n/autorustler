@@ -12,7 +12,7 @@ class DriveController {
   void UpdateState(const uint8_t *yuv, size_t yuvlen,
       float throttle_in, float steering_in,
       const Eigen::Vector3f &accel,
-      const Eigen::Vector3f &gyro, float dt = 1.0/30.0);
+      const Eigen::Vector3f &gyro, float dt);
 
   bool GetControl(float *throttle_out, float *steering_out);
 
