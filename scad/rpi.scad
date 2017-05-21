@@ -108,3 +108,5 @@ module RPiCamera() {
     }
   }
 }
+
+RPi();

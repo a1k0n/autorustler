@@ -29,18 +29,20 @@ module CameraMount() {
   }
 }
 
-module BumperSpar() {
+module BumperSpar(sparlen) {
   rotate([90, 0, 0]) rotate([0, 90, 0]) linear_extrude(height = 2)
     polygon(points=[
       [-1.72, 3.0],
-      [100, 3], [100, -0.1], [0, -0.1], [-1.72, 3.0]]);
+      [sparlen, 3], [sparlen, -0.1], [0, -0.1], [-1.72, 3.0]]);
 }
 
+bb_len = 100;
 module BumperBracket() {
   // 30.75 inner to inner
   // 3.5mm diameter holes (we will probably have to drill out)
   // 60 deg angle from vertical
-  rotate([-60, 0, 0]) {
+  // except we want to angle it forward a bit, so making it 40 deg
+  rotate([-40, 0, 0]) {
     difference() {
       translate([-25, -20, 0])
         cube([50, 20, 2]);
@@ -53,12 +55,12 @@ module BumperBracket() {
   linear_extrude(height = 2)
     polygon(points=[
       [-25, 0],
-      [-wide_cam_width/2, 105],
-      [wide_cam_width/2, 105],
+      [-wide_cam_width/2, bb_len],
+      [wide_cam_width/2, bb_len],
       [25, 0], [-25, 0]]);
-  translate([-12, 0, 1.9]) BumperSpar();
-  translate([10, 0, 1.9]) BumperSpar();
+  translate([-12, 0, 1.9]) BumperSpar(bb_len - 5);
+  translate([10, 0, 1.9]) BumperSpar(bb_len - 5);
 }
 
 BumperBracket();
-translate([0, 115, 0]) CameraMount();
+translate([0, bb_len+10, 0]) CameraMount();

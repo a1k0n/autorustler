@@ -9,6 +9,24 @@ BasePlateMountingScrews = [
   [-30, 10], [-30, -10]
 ];
 
+RPi3MountingScrews = [
+  [3.5, 3.5], [3.5 + 58, 3.5],
+  [3.5, 3.5 + 49], [3.5 + 58, 3.5 + 49]
+];
+
+PWMBoardScrews = [
+  [3.3, 3.3], [59.2, 3.3],
+  [3.3, 22.4], [59.2, 22.4]
+];
+
+IMUBoardScrews = [
+  [2.5, 2.5], [2.5, 23]
+];
+
+PowerBoostScrews = [
+  [2.6, 25], [2.6 + 17.65, 25], [2.6 + 17.65 / 2, 3]
+];
+
 module IMUMount() {
   // dimensions of 9DOF PCB
   // FIXME for MPU9250
@@ -64,5 +82,71 @@ module BasePlate() {
   }
 }
 
+module ElectronicsPlate() {
+  thick = 2;
+  totalsize = [120, 90, thick];
+  mounting_offset = [130, totalsize[1] / 2, 0];
+  difference() {
+    union() {
+      translate(-mounting_offset) {
+        cube(totalsize);
+        translate([120, 90, 0]) rotate([0, 0, 180]) {
+          for (h = RPi3MountingScrews) {
+            translate([h[0], h[1], thick-0.1]) cylinder(d=5, h=5);
+          }
+          translate([0, 61, 0])
+            for (h = PWMBoardScrews) {
+              translate([h[0], h[1], thick-0.1]) cylinder(d=5, h=5);
+            }
+          translate([68, 61, 0])
+            for (h = IMUBoardScrews) {
+              translate([h[0], h[1], thick-0.1]) cylinder(d=5, h=5);
+            }
+          translate([88, 61, 0])
+            for (h = PowerBoostScrews) {
+              translate([h[0], h[1], thick-0.1]) cylinder(d=5, h=5);
+            }
+          translate([90, 2, 1.9]) {
+            translate([0, 38, 0]) rotate([90, 0, 90]) {
+              linear_extrude(height=30) polygon(points=[[0,0], [-1,0], [-1,8], [-3,10], [-2,10], [0,8]]);
+            }
+            rotate([90, 0, 90]) {
+              linear_extrude(height=30) polygon(points=[[0,0], [1,0], [1,8], [3,10], [2,10], [0,8]]);
+            }
+          }
+        }
+      }
+    }
+    for (h = BasePlateMountingScrews) {
+      translate([h[0], h[1], -0.1])
+        cylinder(d=2.2606 + $overbore, h=thick+0.2);
+    }
+    translate(-mounting_offset) {
+      translate([120, 90, 0]) rotate([0, 0, 180]) {
+        for (h = RPi3MountingScrews) {
+          // #4-40 screws
+          translate([h[0], h[1], -0.1]) cylinder(d=2.2606 + $overbore, h=thick + 6);
+        }
+        translate([0, 61, 0])
+          for (h = PWMBoardScrews) {
+            // M2 screws
+            translate([h[0], h[1], -0.1]) cylinder(d=1.6 + $overbore, h=thick + 6);
+          }
+        translate([68, 61, 0])
+          for (h = IMUBoardScrews) {
+            // #4-40
+            translate([h[0], h[1], -0.1]) cylinder(d=2.2606 + $overbore, h=thick + 6);
+          }
+        translate([88, 61, 0])
+          for (h = PowerBoostScrews) {
+            // M2
+            translate([h[0], h[1], -0.1]) cylinder(d=1.6 + $overbore, h=thick + 6);
+          }
+      }
+    }
+  }
+};
+
 translate([0,0,-0.01]) %servoholder();
-BasePlate();
+%BasePlate();
+translate([0, 0, 7]) ElectronicsPlate();
