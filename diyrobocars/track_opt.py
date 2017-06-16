@@ -163,7 +163,7 @@ def OptimizeTrack(x, lanewidth=1.8, kcurv=0.1):
     bounds = zip(*ye_limit(x, lanewidth))
 
     return scipy.optimize.fmin_l_bfgs_b(
-        ye_cost, np.zeros(len(x)), dye, bounds=bounds, disp=True)
+        ye_cost, np.zeros(len(x)), dye, bounds=bounds)
 
 
 def OptimizeTrack2(x, ye, lanewidth=0.8, vmax=10, acmax=9, Ta=3.):
@@ -207,19 +207,27 @@ if __name__ == '__main__':
 
     xm = np.array(x)[:, 0] / 50  # 50 pixels / meter
     track_k = TrackCurvature(xm)
+    Nx = TrackNormal(xm)
+    u = 1j * Nx
+    np.savetxt("track_x.txt",
+               np.vstack([np.real(xm), np.imag(xm)]).T.reshape(-1),
+               newline=",\n")
+    np.savetxt("track_u.txt",
+               np.vstack([np.real(u), np.imag(u)]).T.reshape(-1),
+               newline=",\n")
     np.savetxt("track_k.txt", track_k, newline=",\n")
 
     ye, val, stuff = OptimizeTrack(xm, 1.4, 0.1)
     psie = RelativePsie(ye, xm)
 
-    Nx = TrackNormal(xm)
-    u = 1j * Nx
     rx = u*ye + xm
     raceline_k = TrackCurvature(rx)
 
     np.savetxt("raceline_k.txt", raceline_k, newline=",\n")
     np.savetxt("raceline_ye.txt", ye, newline=",\n")
     np.savetxt("raceline_psie.txt", psie, newline=",\n")
+    np.savetxt("raceline_ds.txt", np.abs(  # distance between successive points
+        np.concatenate([rx[1:] - rx[:-1], rx[:1] - rx[-1:]])), newline=",\n")
 
     print "saved track_k.txt"
     print "saved raceline_{k, ye, psie}.txt"
