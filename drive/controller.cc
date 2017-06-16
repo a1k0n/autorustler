@@ -12,22 +12,20 @@ using Eigen::MatrixXf;
 using Eigen::Vector2f;
 using Eigen::Vector3f;
 using Eigen::VectorXf;
-using Eigen::Lower;
-using Eigen::SelfAdjointView;
 
-static const uint8_t U_THRESH = 112;
+static uint8_t U_THRESH = 112;
 static const uint8_t V_THRESH = 135;
 
-static float MAX_THROTTLE = 0.9;
+static float MAX_THROTTLE = 0.3;
 
 // static const float TRACTION_LIMIT = 3.4;  // maximum v*w product
 // static const float kpy = 0.05;
 
-static const float TRACTION_LIMIT = 2.5;  // maximum v*w product
-static const float kpy = 0.025;
+static const float TRACTION_LIMIT = 9;  // maximum v*w product
+static const float kpy = 0.025*20;
 
-static const float kvy = 0.4;
-// static const float kvy = 0.0;
+static const float kvy = 0.4*20;
+//static const float kvy = 0.0;
 
 static const float LANE_OFFSET = 0;
 
@@ -43,12 +41,12 @@ DriveController::DriveController(): x_(13), P_(13, 13) {
 void DriveController::ResetState() {
   // set up initial state
   x_ << 0, 0, 0, 0, 0,
-     2.3, 0, -1.2, -0.7,  // Cv and Cs are w.r.t. 16-bit ints
-     0.2, 0, 0, 0;
+     2.1972, 0.80, 0.14, -1.13, 0.17, -0.21, -0.05055933, 0.05653949;
   P_.setZero();
-  P_.diagonal() << 25., 1., 0.01, 0.01, 0.0001,
-    1., 0.01, 0.01, 0.01,
-    0.01, 0.0001, 0.0001, 0.0001;
+  P_.diagonal() << 
+    4.      ,    1.      ,    0.01    ,  100.      ,    1.      ,
+    0.0324  ,    0.0841  ,    0.0324  ,    0.0225  ,    0.005776,
+    0.0289  ,    0.1225  ,    0.1225;
 }
 
 void DriveController::PredictStep(
@@ -98,10 +96,10 @@ void DriveController::PredictStep(
   VectorXf Qk(13);
   Qk <<
     v*dt*0.1,  // ye shouldn't jitter much at all
-    v*dt*0.01,  // neither should psie
+    v*dt*0.1,  // neither should psie
     v*dt*0.2,  // angular steering should mostly be correct from controls but give it slack
-    dt*0.001,   // same with velocity
-    v*dt*0.001,  // curvature can change nearly instantaneously, but its scale is tiny
+    dt*0.006,   // same with velocity
+    v*dt*0.1,  // curvature can change nearly instantaneously, but its scale is tiny
     1e-4, 1e-4, 1e-4, 1e-4,  // the remainder are undetermined constants
     1e-4, 1e-4, 1e-4, 1e-4;
 
@@ -127,6 +125,8 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
       uint8_t v = yuv[640*480 + 320*240 + bufidx];
       if (u >= U_THRESH) continue;
       if (v <= V_THRESH) continue;
+
+      if (!udmask[udidx]) continue;  // skip masked pixels
       
       float pu = udplane[udidx*2];
       float pv = udplane[udidx*2 + 1];
@@ -139,6 +139,18 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
       regN += 1;
     }
   }
+
+#if 0
+  // TODO: tune based on r^2 after fit
+  //
+  printf("camera: %d yellow pixels u_thresh=%d\n", regN, U_THRESH);
+  if (regN < 20) {  // raise threshold to get more pixels
+    if (U_THRESH < 128) U_THRESH++;
+  } else if (regN > 320*(240 - udplane_ytop)/10) {
+    // if >10% pixels, raise threshold
+    if (U_THRESH > 80) U_THRESH--;
+  }
+#endif
 
   // not enough data, don't even try to do an update
   if (regN < 20) {
@@ -212,11 +224,11 @@ void DriveController::UpdateIMU(
     0, 0, 0, exp(-Tv), 0, -u_acceleration*exp(Cv - Tv),
       (u_acceleration*exp(Cv) - v)*exp(-Tv), 0, 0, 0, 0, 0, 1;
 
-  const float g_conv = 980. * 2.364 / 20.;
+  const float g_conv = 9.8;
   Vector3f yk = Vector3f(gyro[2], accel[0] * g_conv, accel[1] * g_conv) - zk;
 
-  // accelerometer measurements are hugely noisy, almost not even worth it
-  Vector3f Rk(1e-4, g_conv * g_conv / 16, g_conv * g_conv / 16);
+  // accelerometer measurements are pretty noisy, almost not even worth it
+  Vector3f Rk(1e-4, 4, 4);
 
   Matrix3f S = Hk * P_ * Hk.transpose();
   S.diagonal() += Rk;

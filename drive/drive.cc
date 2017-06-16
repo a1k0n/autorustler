@@ -19,6 +19,9 @@
 volatile bool done = false;
 uint16_t throttle_ = 614, steering_ = 614;
 
+const int PWMCHAN_STEERING = 14;
+const int PWMCHAN_ESC = 15;
+
 void handle_sigint(int signo) { done = true; }
 
 I2C i2c;
@@ -71,10 +74,20 @@ class FlushThread {
   }
 
   void AddEntry(int fd, uint8_t *buf, size_t len) {
+    static int count = 0;
     pthread_mutex_lock(&mutex_);
     flush_queue_.push_back(FlushEntry(fd, buf, len));
+    size_t siz = flush_queue_.size();
     pthread_mutex_unlock(&mutex_);
     sem_post(&sem_);
+    count++;
+    if (count >= 15) {
+      if (siz > 2) {
+        fprintf(stderr, "[FlushThread %d]\r", siz);
+        fflush(stderr);
+      }
+      count = 0;
+    }
 #if 0
     int semval;
     sem_getvalue(&sem_, &semval);
@@ -115,11 +128,13 @@ class Driver: public CameraReceiver {
   Driver() {
     output_fd_ = -1;
     frame_ = 0;
+    frameskip_ = 0;
     autosteer_ = false;
     gettimeofday(&last_t_, NULL);
   }
 
-  bool StartRecording(const char *fname) {
+  bool StartRecording(const char *fname, int frameskip) {
+    frameskip_ = frameskip;
     if (!strcmp(fname, "-")) {
       output_fd_ = fileno(stdout);
     } else {
@@ -151,7 +166,9 @@ class Driver: public CameraReceiver {
   void OnFrame(uint8_t *buf, size_t length) {
     struct timeval t;
     gettimeofday(&t, NULL);
-    if (IsRecording()) {
+    frame_++;
+    if (IsRecording() && frame_ > frameskip_) {
+      frame_ = 0;
       size_t flushlen = length + 4+4+2+2+6*4;
       // copy our frame, push it onto a stack to be flushed
       // asynchronously to sdcard
@@ -167,8 +184,35 @@ class Driver: public CameraReceiver {
       memcpy(flushbuf+24+4, &gyro_[1], 4);
       memcpy(flushbuf+24+8, &gyro_[2], 4);
       memcpy(flushbuf+36, buf, length);
+
+      struct timeval t1;
+      gettimeofday(&t1, NULL);
+      float dt = t1.tv_sec - t.tv_sec + (t1.tv_usec - t.tv_usec) * 1e-6;
+      if (dt > 0.1) {
+        fprintf(stderr, "CameraThread::OnFrame: WARNING: "
+            "alloc/copy took %fs\n", dt);
+      }
+
       flush_thread_.AddEntry(output_fd_, flushbuf, flushlen);
+      struct timeval t2;
+      gettimeofday(&t2, NULL);
+      dt = t2.tv_sec - t1.tv_sec + (t2.tv_usec - t1.tv_usec) * 1e-6;
+      if (dt > 0.1) {
+        fprintf(stderr, "CameraThread::OnFrame: WARNING: "
+            "flush_thread.AddEntry took %fs\n", dt);
+      }
     }
+
+    {
+      static struct timeval t0 = {0,0};
+      float dt = t.tv_sec - t0.tv_sec + (t.tv_usec - t0.tv_usec) * 1e-6;
+      if (dt > 0.1) {
+        fprintf(stderr, "CameraThread::OnFrame: WARNING: "
+            "%fs gap between frames?!\n", dt);
+      }
+      t0 = t;
+    }
+
 
     float u_a = throttle_ / 204.8 - 3.0;
     float u_s = steering_ / 204.8 - 3.0;
@@ -178,8 +222,8 @@ class Driver: public CameraReceiver {
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
       steering_ = std::max(0, (int) ((u_s + 3.0) * 204.8));
       throttle_ = std::max(0, (int) ((u_a + 3.0) * 204.8));
-      pca.SetPWM(0, steering_);
-      pca.SetPWM(1, throttle_);
+      pca.SetPWM(PWMCHAN_STEERING, steering_);
+      pca.SetPWM(PWMCHAN_ESC, throttle_);
     }
   }
 
@@ -189,6 +233,7 @@ class Driver: public CameraReceiver {
  private:
   int output_fd_;
   int frame_;
+  int frameskip_;
   struct timeval last_t_;
 };
 
@@ -201,6 +246,7 @@ int main(int argc, char *argv[]) {
   }
 
   int fps = 30;
+  int frameskip = 2;
 
   if (argc > 2) {
     fps = atoi(argv[2]);
@@ -228,8 +274,8 @@ int main(int argc, char *argv[]) {
   }
 
   pca.Init(100);  // 100Hz output
-  pca.SetPWM(0, 614);
-  pca.SetPWM(1, 614);
+  pca.SetPWM(PWMCHAN_STEERING, 614);
+  pca.SetPWM(PWMCHAN_ESC, 614);
 
   imu.Init();
 
@@ -255,8 +301,8 @@ int main(int argc, char *argv[]) {
       if ((b & 0x40) && !driver.IsRecording()) {  // start button: start recording
         char fnamebuf[256];
         snprintf(fnamebuf, sizeof(fnamebuf), "%s-%d.yuv", argv[1], recording_num++);
-        if (driver.StartRecording(fnamebuf)) {
-          fprintf(stderr, "%d.%06d started recording %s\n", tv.tv_sec, tv.tv_usec, fnamebuf);
+        if (driver.StartRecording(fnamebuf, frameskip)) {
+          fprintf(stderr, "%d.%06d started recording %s %d/%d fps\n", tv.tv_sec, tv.tv_usec, fnamebuf, fps, frameskip+1);
         }
       }
       if (b & 0x20 && driver.IsRecording()) {
@@ -283,9 +329,9 @@ int main(int argc, char *argv[]) {
 
       if (!driver.autosteer_) {
         steering_ = 614.4 - 204.8*s / 32767.0;
-        pca.SetPWM(0, steering_);
         throttle_ = 614.4 + 204.8*t / 32767.0;
-        pca.SetPWM(1, throttle_);
+        pca.SetPWM(PWMCHAN_STEERING, steering_);
+        pca.SetPWM(PWMCHAN_ESC, throttle_);
       }
     }
     {

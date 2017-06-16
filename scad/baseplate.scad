@@ -148,5 +148,5 @@ module ElectronicsPlate() {
 };
 
 translate([0,0,-0.01]) %servoholder();
-%BasePlate();
+BasePlate();
 translate([0, 0, 7]) ElectronicsPlate();

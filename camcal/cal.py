@@ -4,8 +4,7 @@ import cv2.aruco
 import numpy as np
 
 dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_50)
-# board = cv2.aruco.CharucoBoard_create(5, 7, .025, .0125, dictionary)
-board = cv2.aruco.CharucoBoard_create(5, 7, .2175/6, .18/10, dictionary)
+board = cv2.aruco.CharucoBoard_create(5, 7, 0.25375/7, .018, dictionary)
 # img = board.draw((200*3, 200*3))
 
 # Dump the calibration board to a file

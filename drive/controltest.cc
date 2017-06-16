@@ -2,7 +2,13 @@
 #include <stdio.h>
 #include "drive/controller.h"
 
+#ifdef __APPLE__
+#include <xmmintrin.h>
+#endif
+
 int main() {
+  _MM_SET_EXCEPTION_MASK(_MM_GET_EXCEPTION_MASK() & ~_MM_MASK_INVALID);
+
   DriveController c;
 
   uint8_t framebuf[640*480 + 320*240*2 + 36];
@@ -21,7 +27,8 @@ int main() {
     std::cout << "controls: " << u_a << " " << u_s
       << " accel " << a.transpose() << " gyro " << g.transpose() << std::endl;
 
-    c.UpdateState(framebuf+36, sizeof(framebuf) - 36, u_a, u_s, a, g);
+    // FIXME: should parse the timeval in the header for proper dt
+    c.UpdateState(framebuf+36, sizeof(framebuf) - 36, u_a, u_s, a, g, 1.0/30);
 
     std::cout << "x " << c.x_.transpose() << std::endl;
     std::cout << "P " << c.P_.diagonal().transpose() << std::endl;

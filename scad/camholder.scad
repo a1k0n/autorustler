@@ -14,13 +14,13 @@ module CameraMount() {
         cube([wide_cam_width, wide_cam_height, 2]);
       for (h = wide_cam_mount) {
         translate([h[0], h[1], 2 - 0.1]) {
-          cylinder(d=3.25, h=5.1, $fn=10);
+          cylinder(d=4.25, h=5.1, $fn=10);
         }
       }
     }
     for (h = wide_cam_mount) {
       translate([h[0], h[1], -0.1]) {
-        cylinder(d=2.25, h=8.2, $fn=10);
+        cylinder(d=2.5, h=8.2, $fn=10);
       }
     }
     // hole for lens
@@ -36,13 +36,12 @@ module BumperSpar(sparlen) {
       [sparlen, 3], [sparlen, -0.1], [0, -0.1], [-1.72, 3.0]]);
 }
 
-bb_len = 100;
+bb_len = 105;
 module BumperBracket() {
   // 30.75 inner to inner
   // 3.5mm diameter holes (we will probably have to drill out)
   // 60 deg angle from vertical
-  // except we want to angle it forward a bit, so making it 40 deg
-  rotate([-40, 0, 0]) {
+  rotate([-60, 0, 0]) {
     difference() {
       translate([-25, -20, 0])
         cube([50, 20, 2]);
@@ -58,8 +57,8 @@ module BumperBracket() {
       [-wide_cam_width/2, bb_len],
       [wide_cam_width/2, bb_len],
       [25, 0], [-25, 0]]);
-  translate([-12, 0, 1.9]) BumperSpar(bb_len - 5);
-  translate([10, 0, 1.9]) BumperSpar(bb_len - 5);
+  translate([-12, 0, 1.0]) BumperSpar(bb_len - 5);
+  translate([10, 0, 1.0]) BumperSpar(bb_len - 5);
 }
 
 BumperBracket();
