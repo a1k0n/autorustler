@@ -123,6 +123,10 @@ def next_state(X, u, T=1.0/30):
         lat_accel = np.clip(steering_const * steering * vt * vt,
                             -tire_maxa, tire_maxa)
         steer_rate = lat_accel / vt
+
+        # the tanh assumption means we tend to underdrive it as we assume linearity
+        # steer_rate = tire_maxa * np.tanh((steering_const / tire_maxa) * steering * vt**2) / vt
+
     X[3] += T * (steer_rate - w) / T_w
     w = (w + X[3]) * 0.5  # use midpoint
 
@@ -155,10 +159,10 @@ def next_state(X, u, T=1.0/30):
         assert dt > 0
 
         # update psi, ye
-        X[1] += dt * (w - vt * np.cos(psi) * (K / (1. - ye*K)))
+        X[1] += dt * (w + vt * np.cos(psi) * (K / (1. - ye*K)))
         psi = (psi + X[1]) * 0.5
         X[1] %= 2*np.pi
-        X[0] += dt * vt * np.sin(psi)
+        X[0] -= dt * vt * np.sin(psi)
         # ye = (X[0] + ye) * 0.5
 
         T -= dt
@@ -207,7 +211,7 @@ def draw_frame(X, T, u, vidout=None):
                    (255, 255, 0), 1, shift=4)
 
     # draw the car CG
-    C = cv2.Rodrigues(np.float32([0, 0, psi]))[0][:2, :2]
+    C = cv2.Rodrigues(np.float32([0, 0, -psi]))[0][:2, :2]
     cv2.line(frame,
              (int(-4*16*C[0, 0] + 320*16), int(-4*16*C[1, 0] + 240*16)),
              (int(4*16*C[0, 0] + 320*16), int(4*16*C[1, 0] + 240*16)),
@@ -434,14 +438,14 @@ def pid_control(X, T=1.0/30):
     # overshoot the control slightly to compensate for underdamped response:
     # return k1*(v' - v), k2*(w' - w)
 
-    kpy = 0.4
+    kpy = 0.2
     kvy = 1.0
     ye, psi, v, w, s = X
 
     si = np.int32(s) % trackN
     # ds = s - si
     lane_offset = raceline_ye[si]
-    psi_offset = -raceline_psie[si]
+    psi_offset = raceline_psie[si]
 
     cpsi = np.cos(psi - psi_offset)
     spsi = np.sin(psi - psi_offset)
@@ -449,7 +453,10 @@ def pid_control(X, T=1.0/30):
     k = raceline_k[si]
     dx = cpsi / (1.0 - k*ye)
 
-    k_target = dx * (-(ye - lane_offset) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi) + k)
+    # with psi/w backwards:
+    # k_target = dx * (-(ye - lane_offset) * dx * kpy*cpsi + spsi*(k*spsi - kvy*cpsi) + k)
+
+    k_target = -dx * (-(ye - lane_offset) * dx * kpy*cpsi - spsi*(-k*spsi - kvy*cpsi) + k)
 
     # w = kv = a/v
     # a = clip(kv^2, -amax, amax)
@@ -467,13 +474,8 @@ def pid_control(X, T=1.0/30):
         # v' = v + dt * (-speed_const - v) / T_v
         # v' = v(1 - dt/Tv) - speed_const*dt/Tv
         # (v' + speed_const*dt/Tv) / (1 - dt/Tv) = v
-        # TODO: compute distance between specific landmarks when following the
-        # racing line
-        # for now, just use the track spacing
-        # v = ds / dt; dt = ds / v
-        # dt = track_spacing / vmax  # give extra time for a safety margin
         dt = raceline_ds[s_lookahead][i] / vmax
-        vmax = min(speed_const, (vmax + speed_const * dt/T_v) / (1 - dt/T_v))
+        vmax = min(speed_const, (vmax + 0 * dt/T_v) / (1 - dt/T_v))
         vmax = min(vmax, maxv_lookahead[i])
 
 
@@ -487,7 +489,7 @@ def pid_control(X, T=1.0/30):
     # throttle = (T_v * v' / dt + v) / speed_const
     throttle = np.clip((T_v * (v_target - v) / T + v) / speed_const, -1, 1)
 
-    print 'k_target', k_target, 'v_target', v_target, 'vmax', vmax, 'a', v_target**2 * k_target
+    print 'k', k, 'k_target', k_target, 'v_target', v_target, 'vmax', vmax, 'a', v_target**2 * k_target
     return throttle, np.clip(k_target / steering_const, -1, 1)
 
 
@@ -503,15 +505,16 @@ def sim():
     dt = 1.0 / 30
     while not done:
         X = np.zeros(5)
-        X[0] = np.clip(np.random.randn()*10, -0.8, 0.8)  # initial ye
+        #X[0] = np.clip(np.random.randn()*10, -0.8, 0.8)  # initial ye
         X[1] = np.random.randn()*0.2  # initial psi
-        #X[2] = np.random.rand() * speed_const  # initial v
+        X[2] = np.random.rand() * speed_const  # initial v
         #if np.random.rand() > 0.0:  # 30% of the time, start at beginning
         #    # X[4] = np.random.rand() * trackN  # initial s
         #    X[4] = np.random.rand() * 5 + 70  # initial s
         s0 = X[4]
         accel, steering = 1.0, 0.1
         steps = 0
+        print X
         while True:
             #if X[4] > 40:
             draw_frame(X, T, [accel, steering], vidout)
