@@ -8,7 +8,7 @@ wide_cam_mount = [
   [-wide_cam_width/2 + 2.1, wide_cam_height/2 - 14.6 - 1.1],
   [wide_cam_width/2 - 2.1, wide_cam_height/2 - 14.6 - 1.1],
 ];
-wide_cam_lens_diam = 16;
+wide_cam_lens_diam = 16.4;
 screw_diam = 2.1;
 screw_wall_thickness = 0.801;  // must be a multiple of nozzle size 0.4
 support_offset = 4;
@@ -31,7 +31,7 @@ module CameraMount() {
       }
     }
     // hole for lens
-    translate([0, wide_cam_height/2 - 2.3 - 7.5, -0.1])
+    translate([0, wide_cam_height/2 - 8.9, -0.1])
       cylinder(d=wide_cam_lens_diam, h=thickness + 3);
   }
 }
