@@ -1,38 +1,37 @@
 thickness = 7;
 cam_border = 3;
-wide_cam_width = 25.15;
-wide_cam_height = 24.15;
-wide_cam_mount = [
-  [-wide_cam_width/2 + 2.1, wide_cam_height/2 - 2.1],
-  [wide_cam_width/2 - 2.1, wide_cam_height/2 - 2.1],
-  [-wide_cam_width/2 + 2.1, wide_cam_height/2 - 14.6 - 1.1],
-  [wide_cam_width/2 - 2.1, wide_cam_height/2 - 14.6 - 1.1],
+arducam_width = 37;
+arducam_height = 37;
+arducam_mount = [
+  [-28.5/2, 28.5/2],
+  [-28.5/2, -28.5/2],
+  [28.5/2, -28.5/2],
+  [28.5/2, 28.5/2],
 ];
-wide_cam_lens_diam = 16;
-screw_diam = 2.1;
-screw_wall_thickness = 0.801;  // must be a multiple of nozzle size 0.4
+arducam_lens_diam = 18;
+screw_diam = 2.26;  // #4-40
+screw_wall_thickness = 1.2;  // must be a multiple of nozzle size 0.4
 support_offset = 4;
 
 module CameraMount() {
   difference() {
     union() {
-      translate([-(cam_border + wide_cam_width)/2, -(cam_border + wide_cam_height)/2, 0])
-        cube([cam_border + wide_cam_width, cam_border + wide_cam_height, thickness]);
-      for (h = wide_cam_mount) {
+      translate([-(cam_border + arducam_width)/2, -(cam_border + arducam_height)/2, 0])
+        cube([cam_border + arducam_width, cam_border + arducam_height, thickness]);
+      for (h = arducam_mount) {
         translate([h[0], h[1], thickness - 0.1]) {
           cylinder(d=screw_diam + 2*screw_wall_thickness, h=support_offset + 0.1, $fn=20);
-          cylinder(d=screw_diam + 4*screw_wall_thickness, h=support_offset/2 + 0.1, $fn=20);
         }
       }
     }
-    for (h = wide_cam_mount) {
+    for (h = arducam_mount) {
       translate([h[0], h[1], -0.1]) {
         cylinder(d=screw_diam, h=thickness + 10, $fn=10);
       }
     }
     // hole for lens
-    translate([0, wide_cam_height/2 - 2.3 - 7.5, -0.1])
-      cylinder(d=wide_cam_lens_diam, h=thickness + 3);
+    translate([0, 0, -0.1])
+      cylinder(d=arducam_lens_diam, h=thickness + 3);
   }
 }
 
@@ -43,7 +42,7 @@ module BumperSpar(sparlen) {
       [sparlen, 3], [sparlen, -0.1], [0, -0.1], [-1.72, 3.0]]);
 }
 
-bb_len = 105;
+bb_len = 90;
 module BumperBracket() {
   // 30.75 inner to inner
   // 3.5mm diameter holes (we will probably have to drill out)
@@ -57,8 +56,8 @@ module BumperBracket() {
       linear_extrude(height = thickness)
         polygon(points=[
             [-25, 0],
-            [-(cam_border + wide_cam_width)/2, bb_len],
-            [(cam_border + wide_cam_width)/2, bb_len],
+            [-(cam_border + arducam_width)/2, bb_len],
+            [(cam_border + arducam_width)/2, bb_len],
             [25, 0], [-25, 0]]);
     }
     // translate([-12, 0, 1.0]) BumperSpar(bb_len - 5);
@@ -77,4 +76,4 @@ module BumperBracket() {
 }
 
 BumperBracket();
-translate([0, bb_len+10, 0]) CameraMount();
+translate([0, bb_len+arducam_height/2, 0]) CameraMount();
