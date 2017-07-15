@@ -2,6 +2,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include "./i2c.h"
@@ -35,6 +36,28 @@ bool I2C::Write(uint8_t addr, uint8_t reg, uint8_t value) const {
   messages[0].addr  = addr;
   messages[0].flags = 0;
   messages[0].len   = 2;
+  messages[0].buf   = outbuf;
+
+  packets.msgs  = messages;
+  packets.nmsgs = 1;
+  if (ioctl(fd_, I2C_RDWR, &packets) < 0) {
+    perror("i2c_write");
+    return false;
+  }
+  return true;
+}
+
+bool I2C::Write(uint8_t addr, uint8_t reg, int len, const uint8_t *buf) const {
+  uint8_t outbuf[33];
+  struct i2c_rdwr_ioctl_data packets;
+  struct i2c_msg messages[1];
+
+  outbuf[0] = reg;
+  memcpy(outbuf+1, buf, len);
+
+  messages[0].addr  = addr;
+  messages[0].flags = 0;
+  messages[0].len   = len + 1;
   messages[0].buf   = outbuf;
 
   packets.msgs  = messages;

@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "car/pca9685.h"
+// #include "car/pca9685.h"
+#include "car/teensy.h"
 #include "gpio/i2c.h"
 
 int main() {
@@ -13,6 +14,7 @@ int main() {
     return 1;
   }
 
+#if 0
   PCA9685 pca(i2c);
 
   pca.Init(100);  // 100Hz output
@@ -29,4 +31,20 @@ int main() {
     i += 1;
     usleep(10000);
   }
+#else
+
+  Teensy teensy(i2c);
+  teensy.Init();
+
+  int i = 0;
+  for (i = 0; i < 400; i++) {
+    teensy.SetControls(i & 32 ? 1 : 0, 0, 60*sin(i* 0.01));
+    usleep(10000);
+  }
+  uint8_t servo;
+  uint16_t encoders[4];
+  teensy.GetFeedback(&servo, encoders);
+  printf("servo %d encoders %d %d %d %d\n",
+      servo, encoders[0], encoders[1], encoders[2], encoders[3]);
+#endif
 }

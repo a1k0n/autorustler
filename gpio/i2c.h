@@ -11,6 +11,7 @@ class I2C {
   void Close();
 
   bool Write(uint8_t addr, uint8_t reg, uint8_t value) const;
+  bool Write(uint8_t addr, uint8_t reg, int len, const uint8_t *buf) const;
   bool Read(uint8_t addr, uint8_t reg, int len, uint8_t *outbuf) const;
 
  private:

@@ -10,14 +10,15 @@
 #include <deque>
 
 #include "cam/cam.h"
-#include "car/pca9685.h"
+// #include "car/pca9685.h"
+#include "car/teensy.h"
 #include "drive/controller.h"
 #include "gpio/i2c.h"
 #include "imu/imu.h"
 #include "input/js.h"
 
 volatile bool done = false;
-uint16_t throttle_ = 614, steering_ = 614;
+int8_t throttle_ = 0, steering_ = 0;
 
 const int PWMCHAN_STEERING = 14;
 const int PWMCHAN_ESC = 15;
@@ -25,7 +26,8 @@ const int PWMCHAN_ESC = 15;
 void handle_sigint(int signo) { done = true; }
 
 I2C i2c;
-PCA9685 pca(i2c);
+// PCA9685 pca(i2c);
+Teensy teensy(i2c);
 IMU imu(i2c);
 Eigen::Vector3f accel_(0, 0, 0), gyro_(0, 0, 0);
 
@@ -214,16 +216,17 @@ class Driver: public CameraReceiver {
     }
 
 
-    float u_a = throttle_ / 204.8 - 3.0;
-    float u_s = steering_ / 204.8 - 3.0;
+    float u_a = throttle_ / 127.0;
+    float u_s = steering_ / 127.0;
     float dt = t.tv_sec - last_t_.tv_sec + (t.tv_usec - last_t_.tv_usec) * 1e-6;
     controller_.UpdateState(buf, length, u_a, u_s, accel_, gyro_, dt);
 
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
-      steering_ = std::max(0, (int) ((u_s + 3.0) * 204.8));
-      throttle_ = std::max(0, (int) ((u_a + 3.0) * 204.8));
-      pca.SetPWM(PWMCHAN_STEERING, steering_);
-      pca.SetPWM(PWMCHAN_ESC, throttle_);
+      steering_ = 127 * u_s;
+      throttle_ = 127 * u_a;
+      teensy.SetControls(frame_ & 16 ? 1 : 0, throttle_, steering_);
+      // pca.SetPWM(PWMCHAN_STEERING, steering_);
+      // pca.SetPWM(PWMCHAN_ESC, throttle_);
     }
   }
 
@@ -273,9 +276,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  pca.Init(100);  // 100Hz output
-  pca.SetPWM(PWMCHAN_STEERING, 614);
-  pca.SetPWM(PWMCHAN_ESC, 614);
+  teensy.Init();
+
+  // pca.Init(100);  // 100Hz output
+  // pca.SetPWM(PWMCHAN_STEERING, 614);
+  // pca.SetPWM(PWMCHAN_ESC, 614);
 
   imu.Init();
 
@@ -328,10 +333,11 @@ int main(int argc, char *argv[]) {
       }
 
       if (!driver.autosteer_) {
-        steering_ = 614.4 - 204.8*s / 32767.0;
-        throttle_ = 614.4 + 204.8*t / 32767.0;
-        pca.SetPWM(PWMCHAN_STEERING, steering_);
-        pca.SetPWM(PWMCHAN_ESC, throttle_);
+        steering_ = 127*s / 32767.0;
+        throttle_ = 127*t / 32767.0;
+        // pca.SetPWM(PWMCHAN_STEERING, steering_);
+        // pca.SetPWM(PWMCHAN_ESC, throttle_);
+        teensy.SetControls(0, throttle_, steering_);
       }
     }
     {

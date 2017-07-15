@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-static const int udplane_ytop = 90;
+static const int udplane_ytop = 100;
 extern const float udplane[320*(240 - udplane_ytop)*2];
 extern const uint8_t udmask[320*(240 - udplane_ytop)];
 
