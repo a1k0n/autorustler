@@ -21,6 +21,7 @@ static const float kpy = 0.5;
 static const float kvy = 1.5;
 
 static const float LANE_OFFSET = 0;
+static const float METERS_PER_ENCODER_TICK = M_PI * 0.101 / 20;
 
 
 // EKF state order, 13-dimensional:
@@ -35,7 +36,7 @@ void DriveController::ResetState() {
   // set up initial state
   x_ << 
     // s_m, v, delta, y_e, psi_e, kappa
-    0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
     // m1_ (log m/s^2) (overestimated for slow start)
     3.68, 
     // ml_2, ml_3 (both log 1/s)
@@ -52,6 +53,8 @@ void DriveController::ResetState() {
     0.0001,     1.    ,     0.01  ,     4.    ,     1.    ,
     1.    ,     0.0625,     0.0625,     0.0625,     0.01  ,
     0.01  ,     0.01  ,  2500.    ,   100.    ,     1.;
+
+  firstframe_ = true;
 }
 
 static inline float clip(float x, float min, float max) {
@@ -165,6 +168,7 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   srv_b = x_[10], srv_r = x_[11], srvfb_a = x_[12], srvfb_b = x_[13], o_g = x_[14];
 
   float a = B[0], b = B[1], c = B[2];
+  printf("tophat found abc %f %f %f\n", a, b, c);
 
   Vector3f z_k(-c, atan(b), 2*a*pow(b*b + 1, -1.5));
   Matrix3f Mk;
@@ -184,7 +188,7 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   Matrix3f S = Hk * P_ * Hk.transpose() + Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
-#if 0
+#if 1
   std::cout << "mb_K\n" << K << "\n";
   std::cout << "y_k\n" << y_k.transpose()
     << " pred " << (B - y_k).transpose()
@@ -219,11 +223,42 @@ void DriveController::UpdateIMU(
   // S.diagonal() += Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
-#if 0
+#if 1
   std::cout << "IMU_K\n" << K << "\n";
+  std::cout << "y_k\n" << yk
+    << " pred " << zk
+    << " meas " << (yk + zk) << "\n";
+#endif
+
+  x_.noalias() += K * yk;
+  P_ = (MatrixXf::Identity(15, 15) - K*Hk) * P_;
+}
+
+void DriveController::UpdateServoAndEncoders(float servo_pos, float ds) {
+  float s_m = x_[0], v = x_[1], delta = x_[2], y_e = x_[3], psi_e = x_[4],
+  kappa = x_[5], ml_1 = x_[6], ml_2 = x_[7], ml_3 = x_[8], srv_a = x_[9],
+  srv_b = x_[10], srv_r = x_[11], srvfb_a = x_[12], srvfb_b = x_[13], o_g = x_[14];
+
+  Eigen::Vector2f zk(s_m, srvfb_b + delta * srvfb_a);
+  MatrixXf Hk(2, 15);
+  Hk << 
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, srvfb_a, 0, 0, 0, 0, 0, 0, 0, 0, 0, delta, 1, 0;
+
+  Eigen::Vector2f yk = Eigen::Vector2f(ds, servo_pos) - zk;
+
+  Eigen::Vector2f Rk(0.10*0.10, 10*10);
+
+  Eigen::MatrixXf S = Hk * P_ * Hk.transpose();
+  S.diagonal() += Rk;
+
+  MatrixXf K = P_ * Hk.transpose() * S.inverse();
+
+#if 1
+  std::cout << "Encoder_K\n" << K << "\n";
   std::cout << "y_k\n" << yk.transpose()
     << " pred " << zk.transpose()
-    << " meas " << (yk + zk).transpose() << "\n";
+    << " meas " << (zk + yk).transpose() << "\n";
 #endif
 
   x_.noalias() += K * yk;
@@ -232,16 +267,23 @@ void DriveController::UpdateIMU(
 
 void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
       float throttle_in, float steering_in,
-      const Vector3f &accel,
-      const Vector3f &gyro, float dt) {
+      const Vector3f &accel, const Vector3f &gyro,
+      uint8_t servo_pos, const uint16_t *wheel_encoders, float dt) {
 
   if (isinf(x_[0]) || isnan(x_[0])) {
     fprintf(stderr, "WARNING: kalman filter diverged to inf/NaN! resetting!\n");
     ResetState();
+    exit(1);
+    return;
+  }
+
+  if (firstframe_) {
+    memcpy(last_encoders_, wheel_encoders, 4*sizeof(uint16_t));
+    firstframe_ = false;
   }
 
   PredictStep(throttle_in, steering_in, 1.0/30.0);
-#if 0
+#if 1
   std::cout << "predict x" << x_.transpose() << std::endl;
   std::cout << "predict P" << P_.diagonal().transpose() << std::endl;
 #endif
@@ -251,7 +293,7 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
     fprintf(stderr, "DriveController::UpdateState: invalid yuvlen %ld\n",
         yuvlen);
   }
-#if 0
+#if 1
   std::cout << "camera x" << x_.transpose() << std::endl;
   std::cout << "camera P" << P_.diagonal().transpose() << std::endl;
 #endif
@@ -263,14 +305,21 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
     x_[4] += M_PI;
   }
 
-  // TODO: read / update servo & encoders!
+  // read / update servo & encoders
+  // use the average of the two rear encoders as we're most interested in the
+  // motor speed
+  // but we could use all four to get turning radius, etc.
+  float ds = METERS_PER_ENCODER_TICK * 0.5 * (
+      wheel_encoders[2] - last_encoders_[2] + wheel_encoders[3] - last_encoders_[3]);
+  memcpy(last_encoders_, wheel_encoders, 4*sizeof(uint16_t));
+  UpdateServoAndEncoders(servo_pos, ds);
 
   // these don't line up anymore
   // x_[3] = fabsf(x_[3]);  // (velocity) dumb hack: keep us from going backwards when we're confused
   // x_[4] = fmax(fmin(x_[4], 0.3), -0.3);  // clip curvature so it doesn't go too extreme
 
   std::cout << "x " << x_.transpose() << std::endl;
-  // std::cout << "P " << P_.diagonal().transpose() << std::endl;
+  std::cout << "P " << P_.diagonal().transpose() << std::endl;
 }
 
 static float MotorControl(float v_target, float k1, float k2, float k3, float v, float dt) {

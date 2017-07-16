@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <fenv.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
@@ -30,6 +31,8 @@ I2C i2c;
 Teensy teensy(i2c);
 IMU imu(i2c);
 Eigen::Vector3f accel_(0, 0, 0), gyro_(0, 0, 0);
+uint8_t servo_pos_ = 110;
+uint16_t wheel_encoders_[4] = {0, 0, 0, 0};
 
 // asynchronous flush to sdcard
 struct FlushEntry {
@@ -171,21 +174,23 @@ class Driver: public CameraReceiver {
     frame_++;
     if (IsRecording() && frame_ > frameskip_) {
       frame_ = 0;
-      size_t flushlen = length + 4+4+2+2+6*4;
+      size_t flushlen = length + 43;
       // copy our frame, push it onto a stack to be flushed
       // asynchronously to sdcard
       uint8_t *flushbuf = new uint8_t[flushlen];
       memcpy(flushbuf, &t.tv_sec, 4);
       memcpy(flushbuf+4, &t.tv_usec, 4);
-      memcpy(flushbuf+8, &throttle_, 2);
-      memcpy(flushbuf+10, &steering_, 2);
-      memcpy(flushbuf+12, &accel_[0], 4);
-      memcpy(flushbuf+12+4, &accel_[1], 4);
-      memcpy(flushbuf+12+8, &accel_[2], 4);
-      memcpy(flushbuf+24, &gyro_[0], 4);
-      memcpy(flushbuf+24+4, &gyro_[1], 4);
-      memcpy(flushbuf+24+8, &gyro_[2], 4);
-      memcpy(flushbuf+36, buf, length);
+      memcpy(flushbuf+8, &throttle_, 1);
+      memcpy(flushbuf+9, &steering_, 1);
+      memcpy(flushbuf+10, &accel_[0], 4);
+      memcpy(flushbuf+10+4, &accel_[1], 4);
+      memcpy(flushbuf+10+8, &accel_[2], 4);
+      memcpy(flushbuf+22, &gyro_[0], 4);
+      memcpy(flushbuf+22+4, &gyro_[1], 4);
+      memcpy(flushbuf+22+8, &gyro_[2], 4);
+      memcpy(flushbuf+34, &servo_pos_, 1);
+      memcpy(flushbuf+35, wheel_encoders_, 2*4);
+      memcpy(flushbuf+43, buf, length);
 
       struct timeval t1;
       gettimeofday(&t1, NULL);
@@ -219,12 +224,16 @@ class Driver: public CameraReceiver {
     float u_a = throttle_ / 127.0;
     float u_s = steering_ / 127.0;
     float dt = t.tv_sec - last_t_.tv_sec + (t.tv_usec - last_t_.tv_usec) * 1e-6;
-    controller_.UpdateState(buf, length, u_a, u_s, accel_, gyro_, dt);
+    controller_.UpdateState(buf, length,
+            u_a, u_s,
+            accel_, gyro_,
+            servo_pos_, wheel_encoders_,
+            dt);
 
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
       steering_ = 127 * u_s;
       throttle_ = 127 * u_a;
-      teensy.SetControls(frame_ & 16 ? 1 : 0, throttle_, steering_);
+      teensy.SetControls(frame_ & 4 ? 1 : 0, throttle_, steering_);
       // pca.SetPWM(PWMCHAN_STEERING, steering_);
       // pca.SetPWM(PWMCHAN_ESC, throttle_);
     }
@@ -232,16 +241,24 @@ class Driver: public CameraReceiver {
 
   bool autosteer_;
   DriveController controller_;
+  int frame_;
 
  private:
   int output_fd_;
-  int frame_;
   int frameskip_;
   struct timeval last_t_;
 };
 
+static inline float clip(float x, float min, float max) {
+  if (x < min) return min;
+  if (x > max) return max;
+  return x;
+}
+
 int main(int argc, char *argv[]) {
   signal(SIGINT, handle_sigint);
+
+  feenableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW);
 
   if (argc < 2) {
     fprintf(stderr, "%s [[output.yuv] [fps]\n", argv[0]);
@@ -272,11 +289,20 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!js.Open()) {
-    return 1;
+  bool has_joystick = false;
+  if (js.Open()) {
+    has_joystick = true;
+  } else {
+    fprintf(stderr, "joystick not detected!\n");
   }
 
   teensy.Init();
+  teensy.SetControls(0, 0, 0);
+  teensy.GetFeedback(&servo_pos_, wheel_encoders_);
+  fprintf(stderr, "initial teensy state feedback: \n"
+          "  servo %d encoders %d %d %d %d\r",
+          servo_pos_, wheel_encoders_[0], wheel_encoders_[1],
+          wheel_encoders_[2], wheel_encoders_[3]);
 
   // pca.Init(100);  // 100Hz output
   // pca.SetPWM(PWMCHAN_STEERING, 614);
@@ -301,7 +327,7 @@ int main(int argc, char *argv[]) {
   while (!done) {
     int t = 0, s = 0;
     uint16_t b = 0;
-    if (js.ReadInput(&t, &s, &b)) {
+    if (has_joystick && js.ReadInput(&t, &s, &b)) {
       gettimeofday(&tv, NULL);
       if ((b & 0x40) && !driver.IsRecording()) {  // start button: start recording
         char fnamebuf[256];
@@ -333,16 +359,19 @@ int main(int argc, char *argv[]) {
       }
 
       if (!driver.autosteer_) {
-        steering_ = 127*s / 32767.0;
-        throttle_ = 127*t / 32767.0;
+        steering_ = clip(-127*s / 32767.0, -127, 127);
+        throttle_ = clip(127*t / 32767.0, -127, 127);
         // pca.SetPWM(PWMCHAN_STEERING, steering_);
         // pca.SetPWM(PWMCHAN_ESC, throttle_);
-        teensy.SetControls(0, throttle_, steering_);
+        teensy.SetControls(driver.frame_ & 16 ? 1 : 0, throttle_, steering_);
       }
     }
+    // FIXME: predict step here?
     {
       float temp;
       imu.ReadIMU(&accel_, &gyro_, &temp);
+      // FIXME: imu update step?
+      teensy.GetFeedback(&servo_pos_, wheel_encoders_);
     }
     usleep(1000);
   }
