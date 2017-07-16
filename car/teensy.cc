@@ -14,8 +14,8 @@ bool Teensy::SetControls(uint8_t led, int8_t esc, int8_t servo) {
 }
 
 bool Teensy::GetFeedback(uint8_t *servo, uint16_t *encoders) {
-  uint8_t buf[9];
-  if (!i2c_.Read(TEENSY_ADDRESS, 7, 9, buf)) {
+  uint8_t buf[17];
+  if (!i2c_.Read(TEENSY_ADDRESS, 7, 17, buf)) {
     return false;
   }
 
