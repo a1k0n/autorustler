@@ -174,7 +174,9 @@ class Driver: public CameraReceiver {
     frame_++;
     if (IsRecording() && frame_ > frameskip_) {
       frame_ = 0;
-      size_t flushlen = length + 43;
+      // for now: save U channel below ytop only!
+      static const int ytop = 100;
+      size_t flushlen = 43 + (240-ytop) * 320;
       // copy our frame, push it onto a stack to be flushed
       // asynchronously to sdcard
       uint8_t *flushbuf = new uint8_t[flushlen];
@@ -190,7 +192,7 @@ class Driver: public CameraReceiver {
       memcpy(flushbuf+22+8, &gyro_[2], 4);
       memcpy(flushbuf+34, &servo_pos_, 1);
       memcpy(flushbuf+35, wheel_encoders_, 2*4);
-      memcpy(flushbuf+43, buf, length);
+      memcpy(flushbuf+43, buf + 640*480 + ytop*320, (240-ytop)*320);
 
       struct timeval t1;
       gettimeofday(&t1, NULL);
@@ -266,7 +268,7 @@ int main(int argc, char *argv[]) {
   }
 
   int fps = 30;
-  int frameskip = 2;
+  int frameskip = 0;
 
   if (argc > 2) {
     fps = atoi(argv[2]);

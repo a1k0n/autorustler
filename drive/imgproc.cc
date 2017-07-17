@@ -130,7 +130,7 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
 
       // detected = (0.25*hv[:, :, 0] - 2*hv[:, :, 1] + 0.5*hv[:, :, 2] - 30)
       //int32_t detected = (yd >> 2) - (ud << 1) + (vd >> 1) - 60;
-      int32_t detected = -(ud << 1) + (vd >> 1) - 60;
+      int32_t detected = -ud - 30;
       if (fp) {
         fwrite(&yd, 4, 1, fp);
         fwrite(&ud, 4, 1, fp);
@@ -138,12 +138,12 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
       }
       if (detected > 0) {
         // add x, y to linear regression
-        float pu = pixel_scale_m * (i + ux0), pv = pixel_scale_m * (j + uy0);
+        float pu = pixel_scale_m * (i + ux0 + 3), pv = pixel_scale_m * (j + uy0);
         float w = detected;  // use activation as regression weight
         Vector3f regX(w*pv*pv, w*pv, w);
         regXTX.noalias() += regX * regX.transpose();
         regXTy.noalias() += regX * w * pu;
-        regyTy += w * pu * pu;
+        regyTy += w * w * pu * pu;
         regN += 1;
       }
     }
@@ -161,21 +161,24 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
   }
 
   Matrix3f XTXinv = regXTX.inverse();
-  *Bout = XTXinv * regXTy;
+  Vector3f B = XTXinv * regXTy;
+  *Bout = B;
 
-  float r2 = Bout->transpose().dot(regXTX * (*Bout)) - 2*(*Bout).dot(regXTy) + regyTy;
+  // (XB).T y
+  // BT XTy
+  float r2 = B.dot(regXTX * B) - 2*B.dot(regXTy) + regyTy;
   // r2 /= regN;
 
-#if 0
+#if 1
   std::cout << "XTX\n" << regXTX << "\n";
   std::cout << "XTy " << regXTy.transpose() << "\n";
   std::cout << "yTy " << regyTy << "\n";
   std::cout << "XTXinv\n" << XTXinv << "\n";
-  std::cout << "B " << *Bout << "\n";
+  std::cout << "B " << B.transpose() << "\n";
   std::cout << "r2 " << r2 << "\n";
 #endif
 
-  if (isnanf((*Bout)(0))) {
+  if (isnanf(r2)) {
     return false;
   }
 

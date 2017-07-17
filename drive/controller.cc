@@ -122,33 +122,39 @@ void DriveController::PredictStep(
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1;
 
   // velocity fudge factor for determine covariance growth
+  // note: diagonal covariance is squared, but grows linearly with time
   VectorXf Qk(15);
   Qk <<
-      Delta_t * 0.2,  // 20 cm long pos error / s
+      0.2,  // 20 cm long pos error / s
       // v (m/s),
-      Delta_t * 2,  // 2m/s^2 acceleration noise (?)
+      2,  // 2m/s^2 acceleration noise (?)
       // delta (dimensionless AKA 1),
-      Delta_t * 2,  // 2 rad/s^2 (?)
+      2,  // 2 rad/s^2 (?)
       // y_e (m),
-      Delta_t * 1,  // 1m/s position drift
+      1,  // 1m/s position drift
       // psi_e (1),
-      Delta_t * 1,  // 1 rad/s^2 (curvature errors)
+      1,  // 1 rad/s^2 (curvature errors)
       // kappa (1/m),
       // technically should be proportional to velocity here?
-      Delta_t * 10,  // 1/m curvature can go from 0 to 2 at 5 m/s
+      10,  // 1/m curvature can go from 0 to 2 at 5 m/s
 
       // rest are constants, shouldn't drift much
       // ml_1 (m/s^2), ml_2 (1/s), ml_3 (1/s),
-      Delta_t * 1e-1, Delta_t * 1e-2, Delta_t * 1e-2,
+      1e-1, 1e-2, 1e-2,
       // srv_a (1/(m*control)), srv_b (1/m), srv_r (1/m*s)
-      Delta_t * 1e-2, Delta_t * 1e-2, Delta_t * 1e-2,
+      1e-2, 1e-2, 1e-2,
       // srvfb_a (1/counts * m), srvfb_b (1/m),
-      Delta_t * 1e-3, Delta_t * 1e-5,
+      1e-3, 1e-5,
       // o_g (1/s)
-      Delta_t * 1e-3;
+      1e-3;
 
   P_ = Fk * P_ * Fk.transpose();
-  P_.diagonal() += Qk;
+  P_.diagonal() += Delta_t * Qk.cwiseProduct(Qk);
+
+#if 1
+  std::cout << "after predict x " << x_.transpose() << std::endl;
+  std::cout << "after predict P " << P_.diagonal().transpose() << std::endl;
+#endif
 }
 
 void DriveController::UpdateCamera(const uint8_t *yuv) {
@@ -168,16 +174,20 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
   srv_b = x_[10], srv_r = x_[11], srvfb_a = x_[12], srvfb_b = x_[13], o_g = x_[14];
 
   float a = B[0], b = B[1], c = B[2];
-  printf("tophat found abc %f %f %f\n", a, b, c);
+  printf("tophat found abc %f %f %f implied ye %f psie %f k %f\n", a, b, c,
+      -c, atan(b), 2*a*pow(b*b + 1, -1.5));
 
   Vector3f z_k(-c, atan(b), 2*a*pow(b*b + 1, -1.5));
+  std::cout << "Rk\n" << Rk << "\n";
   Matrix3f Mk;
   Mk <<
     0, 0, -1,
     0, 1./(b*b + 1), 0,
     2*pow(b*b + 1, -1.5), -6*a*b*pow(b*b + 1, -2.5), 0;
+  std::cout << "Mk\n" << Mk << "\n";
 
-  Vector3f y_k = z_k - Vector3f(y_e, psi_e, kappa);
+  Vector3f h_k(y_e, psi_e, kappa);
+  Vector3f y_k = z_k - h_k;
   MatrixXf Hk(3, 15);
   Hk <<
     0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -185,19 +195,23 @@ void DriveController::UpdateCamera(const uint8_t *yuv) {
     0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   Rk = Mk * Rk * Mk.transpose();
+  std::cout << "Rk'\n" << Rk << "\n";
   Matrix3f S = Hk * P_ * Hk.transpose() + Rk;
   MatrixXf K = P_ * Hk.transpose() * S.inverse();
 
 #if 1
   std::cout << "mb_K\n" << K << "\n";
   std::cout << "y_k\n" << y_k.transpose()
-    << " pred " << (B - y_k).transpose()
-    << " meas " << B.transpose() << "\n";
+    << " pred " << h_k.transpose()
+    << " meas " << z_k.transpose() << "\n";
 #endif
 
   // finally, state update via kalman gain
   x_.noalias() += K * y_k;
   P_ = (MatrixXf::Identity(15, 15) - K*Hk) * P_;
+#if 1
+  std::cout << "after cam x " << x_.transpose() << std::endl;
+#endif
 }
 
 void DriveController::UpdateIMU(
@@ -232,6 +246,9 @@ void DriveController::UpdateIMU(
 
   x_.noalias() += K * yk;
   P_ = (MatrixXf::Identity(15, 15) - K*Hk) * P_;
+#if 1
+  std::cout << "after IMU x " << x_.transpose() << std::endl;
+#endif
 }
 
 void DriveController::UpdateServoAndEncoders(float servo_pos, float ds) {
@@ -263,6 +280,10 @@ void DriveController::UpdateServoAndEncoders(float servo_pos, float ds) {
 
   x_.noalias() += K * yk;
   P_ = (MatrixXf::Identity(15, 15) - K*Hk) * P_;
+
+#if 1
+  std::cout << "after encoder x " << x_.transpose() << std::endl;
+#endif
 }
 
 void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
@@ -273,7 +294,7 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   if (isinf(x_[0]) || isnan(x_[0])) {
     fprintf(stderr, "WARNING: kalman filter diverged to inf/NaN! resetting!\n");
     ResetState();
-    exit(1);
+    // exit(1);
     return;
   }
 
@@ -283,20 +304,16 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   }
 
   PredictStep(throttle_in, steering_in, 1.0/30.0);
+
 #if 1
-  std::cout << "predict x" << x_.transpose() << std::endl;
-  std::cout << "predict P" << P_.diagonal().transpose() << std::endl;
-#endif
   if (yuvlen == 640*480 + 320*240*2) {
     UpdateCamera(yuv);
   } else {
     fprintf(stderr, "DriveController::UpdateState: invalid yuvlen %ld\n",
         yuvlen);
   }
-#if 1
-  std::cout << "camera x" << x_.transpose() << std::endl;
-  std::cout << "camera P" << P_.diagonal().transpose() << std::endl;
 #endif
+
   UpdateIMU(accel, gyro, throttle_in);
 
   if (x_[4] > M_PI/2) {
@@ -309,10 +326,18 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   // use the average of the two rear encoders as we're most interested in the
   // motor speed
   // but we could use all four to get turning radius, etc.
+  // since the encoders are just 16-bit counters which wrap frequently, we only
+  // track the difference in counts between updates.
+  printf("encoders were: %05d %05d %05d %05d\n"
+         "      are now: %05d %05d %05d %05d\n",
+      last_encoders_[0], last_encoders_[1], last_encoders_[2], last_encoders_[3],
+      wheel_encoders[0], wheel_encoders[1], wheel_encoders[2], wheel_encoders[3]);
   float ds = METERS_PER_ENCODER_TICK * 0.5 * (
       wheel_encoders[2] - last_encoders_[2] + wheel_encoders[3] - last_encoders_[3]);
   memcpy(last_encoders_, wheel_encoders, 4*sizeof(uint16_t));
   UpdateServoAndEncoders(servo_pos, ds);
+  // reset x_m to zero after update to track only the difference between updates
+  x_[0] -= (int) x_[0];
 
   // these don't line up anymore
   // x_[3] = fabsf(x_[3]);  // (velocity) dumb hack: keep us from going backwards when we're confused
