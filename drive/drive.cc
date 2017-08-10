@@ -234,6 +234,7 @@ class Driver: public CameraReceiver {
             accel_, gyro_,
             servo_pos_, wheel_pos_,
             dt);
+    last_t_ = t;
 
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
       steering_ = 127 * u_s;

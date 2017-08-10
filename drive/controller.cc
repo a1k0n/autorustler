@@ -13,7 +13,7 @@ using Eigen::Vector2f;
 using Eigen::Vector3f;
 using Eigen::VectorXf;
 
-static const float MAX_THROTTLE = 0.9;
+static const float MAX_THROTTLE = 0.5;
 static const float SPEED_LIMIT = 1.5;
 
 static const float ACCEL_LIMIT = 8.0;  // maximum dv/dt (m/s^2)
@@ -23,6 +23,7 @@ static const float kpy = 0.5;
 static const float kvy = 2.5;
 
 static const float LANE_OFFSET = 0;
+// this is actually used in model.py, not here
 static const float METERS_PER_ENCODER_TICK = M_PI * 0.101 / 20;
 
 
@@ -78,17 +79,20 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   }
 
   ekf.Predict(1.0/30.0, throttle_in, steering_in);
+  std::cout << "x after predict " << x_.transpose() << std::endl;
 
 #if 1
   if (yuvlen == 640*480 + 320*240*2) {
     UpdateCamera(yuv);
+    std::cout << "x after camera " << x_.transpose() << std::endl;
   } else {
     fprintf(stderr, "DriveController::UpdateState: invalid yuvlen %ld\n",
         yuvlen);
   }
 #endif
 
-  ekf.UpdateIMU(gyro[2]);
+  // ekf.UpdateIMU(gyro[2]);
+  // std::cout << "x after IMU (" << gyro[2] << ")" << x_.transpose() << std::endl;
 
   // hack: force psi_e forward-facing
   if (x_[3] > M_PI/2) {
@@ -109,12 +113,14 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
       wheel_encoders[0], wheel_encoders[1], wheel_encoders[2], wheel_encoders[3]);
 
   // average ds
-  float ds = 0.5 * (
-      wheel_encoders[2] - last_encoders_[2] + wheel_encoders[3] - last_encoders_[3]);
+  // float ds = 0.5 * (
+  //     wheel_encoders[2] - last_encoders_[2] + wheel_encoders[3] - last_encoders_[3]);
+  // hack: only encoders[2] is working
+  float ds = wheel_encoders[2] - last_encoders_[2];
   memcpy(last_encoders_, wheel_encoders, 4*sizeof(uint16_t));
   ekf.UpdateEncoders(ds/dt, servo_pos);
 
-  std::cout << "x " << x_.transpose() << std::endl;
+  std::cout << "x after encoders (" << ds/dt << ") " << x_.transpose() << std::endl;
   std::cout << "P " << ekf.GetCovariance().diagonal().transpose() << std::endl;
 }
 
@@ -138,6 +144,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   float y_e = x_[2];
   float psi_e = x_[3];
   float kappa = x_[4];
+#if 1
   float ml_1 = x_[5];
   float ml_2 = x_[6];
   float ml_3 = x_[7];
@@ -147,6 +154,15 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   float srv_r = x_[11];
 
   float k1 = exp(ml_1), k2 = exp(ml_2), k3 = exp(ml_3), k4 = exp(ml_4);
+#else
+  float srv_a = x_[5];
+  float srv_b = x_[6];
+  float srv_r = x_[7];
+  float k1 = 5000 * M_PI * 0.101 / 40.0;
+  float k2 = 4, k3 = 1;
+  float k4 = 0.3 * k1;
+#endif
+
 
   float dt = 1.0f/30;  // FIXME, should be an argument
 
