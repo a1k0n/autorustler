@@ -32,7 +32,8 @@ Teensy teensy(i2c);
 IMU imu(i2c);
 Eigen::Vector3f accel_(0, 0, 0), gyro_(0, 0, 0);
 uint8_t servo_pos_ = 110;
-uint16_t wheel_encoders_[4] = {0, 0, 0, 0};
+uint16_t wheel_pos_[4] = {0, 0, 0, 0};
+uint16_t wheel_dt_[4] = {0, 0, 0, 0};
 
 // asynchronous flush to sdcard
 struct FlushEntry {
@@ -176,23 +177,25 @@ class Driver: public CameraReceiver {
       frame_ = 0;
       // for now: save U channel below ytop only!
       static const int ytop = 100;
-      size_t flushlen = 43 + (240-ytop) * 320;
+      uint32_t flushlen = 55 + (240-ytop) * 320;
       // copy our frame, push it onto a stack to be flushed
       // asynchronously to sdcard
       uint8_t *flushbuf = new uint8_t[flushlen];
-      memcpy(flushbuf, &t.tv_sec, 4);
-      memcpy(flushbuf+4, &t.tv_usec, 4);
-      memcpy(flushbuf+8, &throttle_, 1);
-      memcpy(flushbuf+9, &steering_, 1);
-      memcpy(flushbuf+10, &accel_[0], 4);
-      memcpy(flushbuf+10+4, &accel_[1], 4);
-      memcpy(flushbuf+10+8, &accel_[2], 4);
-      memcpy(flushbuf+22, &gyro_[0], 4);
-      memcpy(flushbuf+22+4, &gyro_[1], 4);
-      memcpy(flushbuf+22+8, &gyro_[2], 4);
-      memcpy(flushbuf+34, &servo_pos_, 1);
-      memcpy(flushbuf+35, wheel_encoders_, 2*4);
-      memcpy(flushbuf+43, buf + 640*480 + ytop*320, (240-ytop)*320);
+      memcpy(flushbuf, &flushlen, 4);  // write header length
+      memcpy(flushbuf+4, &t.tv_sec, 4);
+      memcpy(flushbuf+8, &t.tv_usec, 4);
+      memcpy(flushbuf+12, &throttle_, 1);
+      memcpy(flushbuf+13, &steering_, 1);
+      memcpy(flushbuf+14, &accel_[0], 4);
+      memcpy(flushbuf+14+4, &accel_[1], 4);
+      memcpy(flushbuf+14+8, &accel_[2], 4);
+      memcpy(flushbuf+26, &gyro_[0], 4);
+      memcpy(flushbuf+26+4, &gyro_[1], 4);
+      memcpy(flushbuf+26+8, &gyro_[2], 4);
+      memcpy(flushbuf+38, &servo_pos_, 1);
+      memcpy(flushbuf+39, wheel_pos_, 2*4);
+      memcpy(flushbuf+47, wheel_dt_, 2*4);
+      memcpy(flushbuf+55, buf + 640*480 + ytop*320, (240-ytop)*320);
 
       struct timeval t1;
       gettimeofday(&t1, NULL);
@@ -229,7 +232,7 @@ class Driver: public CameraReceiver {
     controller_.UpdateState(buf, length,
             u_a, u_s,
             accel_, gyro_,
-            servo_pos_, wheel_encoders_,
+            servo_pos_, wheel_pos_,
             dt);
 
     if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
@@ -300,11 +303,11 @@ int main(int argc, char *argv[]) {
 
   teensy.Init();
   teensy.SetControls(0, 0, 0);
-  teensy.GetFeedback(&servo_pos_, wheel_encoders_);
+  teensy.GetFeedback(&servo_pos_, wheel_pos_, wheel_dt_);
   fprintf(stderr, "initial teensy state feedback: \n"
           "  servo %d encoders %d %d %d %d\r",
-          servo_pos_, wheel_encoders_[0], wheel_encoders_[1],
-          wheel_encoders_[2], wheel_encoders_[3]);
+          servo_pos_, wheel_pos_[0], wheel_pos_[1],
+          wheel_pos_[2], wheel_pos_[3]);
 
   // pca.Init(100);  // 100Hz output
   // pca.SetPWM(PWMCHAN_STEERING, 614);
@@ -372,8 +375,8 @@ int main(int argc, char *argv[]) {
     {
       float temp;
       imu.ReadIMU(&accel_, &gyro_, &temp);
-      // FIXME: imu update step?
-      teensy.GetFeedback(&servo_pos_, wheel_encoders_);
+      // FIXME: imu EKF update step?
+      teensy.GetFeedback(&servo_pos_, wheel_pos_, wheel_dt_);
     }
     usleep(1000);
   }

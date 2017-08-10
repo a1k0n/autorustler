@@ -4,6 +4,8 @@
 #include <Eigen/Dense>
 #include <math.h>
 
+#include "drive/ekf.h"
+
 class DriveController {
  public:
   DriveController();
@@ -20,22 +22,10 @@ class DriveController {
 
   void ResetState();
 
-  // run a prediction step
-  void PredictStep(float u_acceleration, float u_steering,
-      float dt = 1.0/30);
-
   // update w/ slope and intercept of line on ground
   void UpdateCamera(const uint8_t *yuv);
 
-  // update w/ IMU measurement
-  void UpdateIMU(const Eigen::Vector3f &accel, const Eigen::Vector3f &gyro,
-      float u_acceleration);
-  void UpdateServoAndEncoders(float servo_pos, float ds);
-
-  // state is:
-  // ye, psie, w, v, k, Cv, Tv, Cs, Ts, mu_s, mu_g, mu_ax, mu_ay
-  Eigen::VectorXf x_;
-  Eigen::MatrixXf P_;
+  EKF ekf;
 
   bool firstframe_;
   uint16_t last_encoders_[4];
