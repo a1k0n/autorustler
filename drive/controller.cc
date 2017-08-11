@@ -127,7 +127,7 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
 static float MotorControl(float accel,
     float k1, float k2, float k3, float k4,
     float v, float dt) {
-  float a_thresh = dt * (-k3 * v - k4);
+  float a_thresh = -k3 * v - k4;
   // voltage (1 or 0)
   float V = accel > a_thresh ? 1 : 0;
   // duty cycle
