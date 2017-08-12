@@ -112,21 +112,27 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
       last_encoders_[0], last_encoders_[1], last_encoders_[2], last_encoders_[3],
       wheel_encoders[0], wheel_encoders[1], wheel_encoders[2], wheel_encoders[3]);
 
-  // average ds
-  // float ds = 0.5 * (
-  //     wheel_encoders[2] - last_encoders_[2] + wheel_encoders[3] - last_encoders_[3]);
-  // hack: only encoders[2] is working
-  float ds = wheel_encoders[2] - last_encoders_[2];
+  // average ds among wheel encoders which are actually moving
+  float ds = 0, nds = 0;
+  for (int i = 0; i < 4; i++) {
+    if (wheel_encoders[i] != last_encoders_[i]) {
+      ds += static_cast<float>(wheel_encoders[2] - last_encoders_[2]);
+      nds += 1;
+    }
+  }
   memcpy(last_encoders_, wheel_encoders, 4*sizeof(uint16_t));
-  ekf.UpdateEncoders(ds/dt, servo_pos);
+  // and do an EKF update if the wheels are moving.
+  if (nds > 0) {
+    ekf.UpdateEncoders(ds/(nds * dt), servo_pos);
+    std::cout << "x after encoders (" << ds/dt << ") " << x_.transpose() << std::endl;
+  }
 
-  std::cout << "x after encoders (" << ds/dt << ") " << x_.transpose() << std::endl;
   std::cout << "P " << ekf.GetCovariance().diagonal().transpose() << std::endl;
 }
 
 static float MotorControl(float accel,
     float k1, float k2, float k3, float k4,
-    float v, float dt) {
+    float v) {
   float a_thresh = -k3 * v - k4;
   // voltage (1 or 0)
   float V = accel > a_thresh ? 1 : 0;
@@ -190,7 +196,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
 
   *steering_out = clip((k_target - srv_b) / srv_a, -1, 1);
   *throttle_out = clip(
-      MotorControl(a_target, k1, k2, k3, k4, v, dt),
+      MotorControl(a_target, k1, k2, k3, k4, v),
       -1, MAX_THROTTLE);
 
   printf("  throttle %f steer %f\n", *throttle_out, *steering_out);
