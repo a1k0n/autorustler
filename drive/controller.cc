@@ -17,12 +17,12 @@ static const float MAX_THROTTLE = 1.0;
 static const float SPEED_LIMIT = 3.4;
 
 static const float ACCEL_LIMIT = 8.0;  // maximum dv/dt (m/s^2)
-static const float BRAKE_LIMIT = -9.0;  // minimum dv/dt
+static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
 static const float TRACTION_LIMIT = 3.0;  // maximum v*w product (m/s^2)
-static const float kpy = 0.5;
+static const float kpy = 0.2;
 static const float kvy = 1.0;
 
-static const float LANE_OFFSET = 0;
+static const float LANE_OFFSET = 0.8;
 // this is actually used in model.py, not here
 static const float METERS_PER_ENCODER_TICK = M_PI * 0.101 / 20;
 
@@ -116,7 +116,7 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   float ds = 0, nds = 0;
   for (int i = 0; i < 4; i++) {
     if (wheel_encoders[i] != last_encoders_[i]) {
-      ds += static_cast<float>(wheel_encoders[2] - last_encoders_[2]);
+      ds += (uint16_t) (wheel_encoders[2] - last_encoders_[2]);
       nds += 1;
     }
   }
@@ -189,10 +189,10 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   // it's a little backwards though because our steering is reversed w.r.t. curvature
   float k_target = -dx * (-(y_e - lane_offset) * dx * kpy*cpsi - spsi*(-kappa*spsi - kvy*cpsi) + kappa);
   float v_target = fmin(vmax, sqrtf(TRACTION_LIMIT / fabs(k_target)));
-  float a_target = clip((v_target - v)/dt, BRAKE_LIMIT, ACCEL_LIMIT);
+  float a_target = clip((v_target - v)/(4*dt), BRAKE_LIMIT, ACCEL_LIMIT);
 
-  printf("steer_target %f delta %f v_target %f v %f a %f/%f v %f y %f psi %f\n",
-      k_target, delta, v_target, v, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
+  printf("steer_target %f delta %f v_target %f v %f a_target %f lateral_a %f/%f v %f y %f psi %f\n",
+      k_target, delta, v_target, v, a_target, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
 
   *steering_out = clip((k_target - srv_b) / srv_a, -1, 1);
   *throttle_out = clip(
