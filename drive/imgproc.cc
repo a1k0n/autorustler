@@ -12,6 +12,9 @@ static const int ytop = 100;
 // uxrange (-56, 55) uyrange (2, 59) x0 -56 y0 2
 static const int ux0 = -56, uy0 = 2;
 
+// 30 for home, 15 for diyrobocars shiny track
+static const int ACTIV_THRESH = 20;
+
 static const int uxsiz = 111, uysiz = 57;
 
 static const float pixel_scale_m = 0.025;
@@ -130,7 +133,7 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
 
       // detected = (0.25*hv[:, :, 0] - 2*hv[:, :, 1] + 0.5*hv[:, :, 2] - 30)
       //int32_t detected = (yd >> 2) - (ud << 1) + (vd >> 1) - 60;
-      int32_t detected = -ud - 30;
+      int32_t detected = -ud - ACTIV_THRESH;
       if (fp) {
         fwrite(&yd, 4, 1, fp);
         fwrite(&ud, 4, 1, fp);

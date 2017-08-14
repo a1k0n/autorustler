@@ -14,15 +14,15 @@ using Eigen::Vector3f;
 using Eigen::VectorXf;
 
 static const float MAX_THROTTLE = 1.0;
-static const float SPEED_LIMIT = 3.4;
+static const float SPEED_LIMIT = 2.5;
 
-static const float ACCEL_LIMIT = 8.0;  // maximum dv/dt (m/s^2)
+static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
-static const float TRACTION_LIMIT = 3.0;  // maximum v*w product (m/s^2)
+static const float TRACTION_LIMIT = 1.5;  // maximum v*w product (m/s^2)
 static const float kpy = 0.2;
 static const float kvy = 1.0;
 
-static const float LANE_OFFSET = 0.8;
+static const float LANE_OFFSET = 0.0;
 // this is actually used in model.py, not here
 static const float METERS_PER_ENCODER_TICK = M_PI * 0.101 / 20;
 
