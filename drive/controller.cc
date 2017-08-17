@@ -14,16 +14,21 @@ using Eigen::Vector2f;
 using Eigen::Vector3f;
 using Eigen::VectorXf;
 
-static const float MAX_THROTTLE = 0.6;
-static const float SPEED_LIMIT = 1.5;
+static const float MAX_THROTTLE = 0.8;
+static const float SPEED_LIMIT = 3.4;
 
-static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
+static const float ACCEL_P = -0.1;
+static const float ACCEL_I = 0.01;
+static const float ACCEL_D = 0.0;
+
+static const float ACCEL_LIMIT = 1.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
-static const float TRACTION_LIMIT = 1.5;  // maximum v*w product (m/s^2)
-static const float kpy = 4.0;
-static const float kvy = 1.0;
+static const float TRACTION_LIMIT = 4.0;  // maximum v*w product (m/s^2)
+static const float kpy = 2.0;
+static const float kvy = 2.0;
 
 static const float LANE_OFFSET = 0.0;
+static const float LANEOFFSET_PER_K = 0.0;
 // this is actually used in model.py, not here
 static const float METERS_PER_ENCODER_TICK = M_PI * 0.101 / 20;
 
@@ -112,9 +117,9 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
 
   // average ds among wheel encoders which are actually moving
   float ds = 0, nds = 0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 2; i < 4; i++) {  // only use rear encoders
     if (wheel_encoders[i] != last_encoders_[i]) {
-      ds += (uint16_t) (wheel_encoders[2] - last_encoders_[2]);
+      ds += (uint16_t) (wheel_encoders[i] - last_encoders_[i]);
       nds += 1;
     }
   }
@@ -122,6 +127,9 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   // and do an EKF update if the wheels are moving.
   if (nds > 0) {
     ekf.UpdateEncoders(ds/(nds * dt), servo_pos);
+    std::cout << "x after encoders (" << ds/dt << ") " << x_.transpose() << std::endl;
+  } else {
+    ekf.UpdateEncoders(0, servo_pos);
     std::cout << "x after encoders (" << ds/dt << ") " << x_.transpose() << std::endl;
   }
 
@@ -172,7 +180,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
   float vmax = fmin(SPEED_LIMIT, (k1 - k4)/(k2 + k3));
 
   // TODO: race line following w/ particle filter localization
-  float lane_offset = LANE_OFFSET;
+  float lane_offset = clip(LANE_OFFSET + kappa * LANEOFFSET_PER_K, -1.0, 1.0);
   float psi_offset = 0;
 
   float cpsi = cos(psi_e - psi_offset),
@@ -186,15 +194,19 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
   // it's a little backwards though because our steering is reversed w.r.t. curvature
   float k_target = dx * (-(y_e - lane_offset) * dx * kpy*cpsi - spsi*(-kappa*spsi - kvy*cpsi) + kappa);
   float v_target = fmin(vmax, sqrtf(TRACTION_LIMIT / fabs(k_target)));
-  float a_target = clip((v_target - v)/(4*dt), BRAKE_LIMIT, ACCEL_LIMIT);
+  float a_target = clip(v_target - v, BRAKE_LIMIT, ACCEL_LIMIT);
 
   printf("steer_target %f delta %f v_target %f v %f a_target %f lateral_a %f/%f v %f y %f psi %f\n",
       k_target, delta, v_target, v, a_target, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
 
   *steering_out = clip((k_target - srv_b) / srv_a, -1, 1);
   *throttle_out = clip(
-      MotorControl(a_target, k1, k2, k3, k4, v),
-      -1, MAX_THROTTLE);
+       MotorControl(a_target / (4*dt), k1, k2, k3, k4, v),
+       -1, MAX_THROTTLE);
+  // static float ai_last = 0;
+  // *throttle_out = clip(ACCEL_P * a_target + ACCEL_I * ai_last,
+  //     -1, MAX_THROTTLE);
+  // ai_last = clip(ai_last + a_target, -500, 500);
 
   printf("  throttle %f steer %f\n", *throttle_out, *steering_out);
   return true;
