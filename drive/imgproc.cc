@@ -6,6 +6,7 @@
 #include "drive/imgproc.h"
 
 using Eigen::Matrix3f;
+using Eigen::Matrix4f;
 using Eigen::Vector3f;
 
 static const int ytop = 100;
@@ -13,7 +14,7 @@ static const int ytop = 100;
 static const int ux0 = -56, uy0 = 2;
 
 // 30 for home, 15 for diyrobocars shiny track
-static const int ACTIV_THRESH = 20;
+static const int ACTIV_THRESH = 30;
 
 static const int uxsiz = 111, uysiz = 57;
 
@@ -36,7 +37,8 @@ static const int8_t udplane[320*(240-ytop)*2] = {
 #include "udplane.txt"
 };
 
-bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
+bool TophatFilter(const uint8_t *yuv, Vector3f *Bout,
+    float *y_cout, Matrix4f *Rkout) {
   int32_t accumbuf[uxsiz * uysiz * 3];
   // input is a 640x480 YUV420 image
   memset(accumbuf, 0, uxsiz * uysiz * 3 * sizeof(accumbuf[0]));
@@ -53,7 +55,6 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
   size_t udidx = 0;
   for (int j = 0; j < 240 - ytop; j++) {
     for (int i = 0; i < 320; i++, bufidx++, udidx++) {
-
       uint8_t y = yuv[(j+ytop)*2*640 + 2*i];
       uint8_t u = yuv[640*480 + bufidx];
       uint8_t v = yuv[640*480 + 320*240 + bufidx];
@@ -117,6 +118,8 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
   Matrix3f regXTX = Matrix3f::Zero();
   Vector3f regXTy = Vector3f::Zero();
   double regyTy = 0;
+  double regxsum = 0;
+  double regwsum = 0;
   int regN = 0;
 
   for (int j = 0; j < uysiz; j++) {
@@ -141,9 +144,12 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
       }
       if (detected > 0) {
         // add x, y to linear regression
-        float pu = pixel_scale_m * (i + ux0 + 3), pv = pixel_scale_m * (j + uy0);
+        float pu = pixel_scale_m * (i + ux0 + 3),
+              pv = pixel_scale_m * (j + uy0);
         float w = detected;  // use activation as regression weight
         Vector3f regX(w*pv*pv, w*pv, w);
+        regxsum += w*pv;
+        regwsum += w;
         regXTX.noalias() += regX * regX.transpose();
         regXTy.noalias() += regX * w * pu;
         regyTy += w * w * pu * pu;
@@ -170,21 +176,26 @@ bool TophatFilter(const uint8_t *yuv, Vector3f *Bout, Matrix3f *Rkout) {
   // (XB).T y
   // BT XTy
   float r2 = B.dot(regXTX * B) - 2*B.dot(regXTy) + regyTy;
-  // r2 /= regN;
+  r2 *= 100.0 / (regN - 1);
 
-#if 1
+  *y_cout = regxsum / regwsum;
+#if 0
   std::cout << "XTX\n" << regXTX << "\n";
   std::cout << "XTy " << regXTy.transpose() << "\n";
   std::cout << "yTy " << regyTy << "\n";
   std::cout << "XTXinv\n" << XTXinv << "\n";
+#endif
+#if 1
   std::cout << "B " << B.transpose() << "\n";
   std::cout << "r2 " << r2 << "\n";
+  std::cout << "y_c " << *y_cout << "\n";
 #endif
 
   if (isnanf(r2)) {
     return false;
   }
 
-  *Rkout = XTXinv * r2;
+  (*Rkout).topLeftCorner(3, 3) = XTXinv * r2;
+  (*Rkout)(3, 3) = regXTX(1, 1) / regwsum - *y_cout;
   return true;
 }

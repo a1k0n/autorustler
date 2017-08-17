@@ -18,7 +18,7 @@ class DriveController {
       uint8_t servo_pos,
       const uint16_t *wheel_encoders, float dt);
 
-  bool GetControl(float *throttle_out, float *steering_out);
+  bool GetControl(float *throttle_out, float *steering_out, float dt);
 
   void ResetState();
 

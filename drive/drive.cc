@@ -236,7 +236,7 @@ class Driver: public CameraReceiver {
             dt);
     last_t_ = t;
 
-    if (autosteer_ && controller_.GetControl(&u_a, &u_s)) {
+    if (autosteer_ && controller_.GetControl(&u_a, &u_s, dt)) {
       steering_ = 127 * u_s;
       throttle_ = 127 * u_a;
       teensy.SetControls(frame_ & 4 ? 1 : 0, throttle_, steering_);

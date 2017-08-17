@@ -8,18 +8,19 @@
 
 using Eigen::Matrix2f;
 using Eigen::Matrix3f;
+using Eigen::Matrix4f;
 using Eigen::MatrixXf;
 using Eigen::Vector2f;
 using Eigen::Vector3f;
 using Eigen::VectorXf;
 
-static const float MAX_THROTTLE = 1.0;
-static const float SPEED_LIMIT = 2.5;
+static const float MAX_THROTTLE = 0.6;
+static const float SPEED_LIMIT = 1.5;
 
 static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
 static const float TRACTION_LIMIT = 1.5;  // maximum v*w product (m/s^2)
-static const float kpy = 0.2;
+static const float kpy = 4.0;
 static const float kvy = 1.0;
 
 static const float LANE_OFFSET = 0.0;
@@ -44,21 +45,18 @@ static inline float clip(float x, float min, float max) {
 
 void DriveController::UpdateCamera(const uint8_t *yuv) {
   Vector3f B;
-  Matrix3f Rk;
+  Matrix4f Rk = Matrix4f::Zero();
+  float yc;
 
-  if (!TophatFilter(yuv, &B, &Rk)) {
+  if (!TophatFilter(yuv, &B, &yc, &Rk)) {
     return;
   }
-  // Rk(1, 1) += 0.01;  // slope is a bit iffy; add a bit of noise covariance
 
   // ok, we've obtained our linear fit B and our measurement covariance Rk
   // now do the sensor fusion step
 
   float a = B[0], b = B[1], c = B[2];
-  printf("tophat found abc %f %f %f implied ye %f psie %f k %f\n", a, b, c,
-      -c, atan(b), 2*a*pow(b*b + 1, -1.5));
-
-  ekf.UpdateCenterline(a, b, c, Rk);
+  ekf.UpdateCenterline(a, b, c, yc, Rk);
 }
 
 void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
@@ -78,7 +76,7 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
     firstframe_ = false;
   }
 
-  ekf.Predict(1.0/30.0, throttle_in, steering_in);
+  ekf.Predict(dt, throttle_in, steering_in);
   std::cout << "x after predict " << x_.transpose() << std::endl;
 
 #if 1
@@ -91,8 +89,8 @@ void DriveController::UpdateState(const uint8_t *yuv, size_t yuvlen,
   }
 #endif
 
-  // ekf.UpdateIMU(gyro[2]);
-  // std::cout << "x after IMU (" << gyro[2] << ")" << x_.transpose() << std::endl;
+  ekf.UpdateIMU(gyro[2]);
+  std::cout << "x after IMU (" << gyro[2] << ")" << x_.transpose() << std::endl;
 
   // hack: force psi_e forward-facing
   if (x_[3] > M_PI/2) {
@@ -143,7 +141,8 @@ static float MotorControl(float accel,
   return V == 1 ? DC : -DC;
 }
 
-bool DriveController::GetControl(float *throttle_out, float *steering_out) {
+bool DriveController::GetControl(float *throttle_out, float *steering_out,
+    float dt) {
   const Eigen::VectorXf &x_ = ekf.GetState();
   float v = x_[0];
   float delta = x_[1];
@@ -170,8 +169,6 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
 #endif
 
 
-  float dt = 1.0f/30;  // FIXME, should be an argument
-
   float vmax = fmin(SPEED_LIMIT, (k1 - k4)/(k2 + k3));
 
   // TODO: race line following w/ particle filter localization
@@ -187,7 +184,7 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out) {
   // <inria-00074575>
 
   // it's a little backwards though because our steering is reversed w.r.t. curvature
-  float k_target = -dx * (-(y_e - lane_offset) * dx * kpy*cpsi - spsi*(-kappa*spsi - kvy*cpsi) + kappa);
+  float k_target = dx * (-(y_e - lane_offset) * dx * kpy*cpsi - spsi*(-kappa*spsi - kvy*cpsi) + kappa);
   float v_target = fmin(vmax, sqrtf(TRACTION_LIMIT / fabs(k_target)));
   float a_target = clip((v_target - v)/(4*dt), BRAKE_LIMIT, ACCEL_LIMIT);
 
