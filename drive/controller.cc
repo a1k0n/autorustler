@@ -15,16 +15,16 @@ using Eigen::Vector3f;
 using Eigen::VectorXf;
 
 static const float MAX_THROTTLE = 0.8;
-static const float SPEED_LIMIT = 3.4;
+static const float SPEED_LIMIT = 5.0;
 
 static const float ACCEL_P = -0.1;
 static const float ACCEL_I = 0.01;
 static const float ACCEL_D = 0.0;
 
-static const float ACCEL_LIMIT = 1.0;  // maximum dv/dt (m/s^2)
+static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
-static const float TRACTION_LIMIT = 4.0;  // maximum v*w product (m/s^2)
-static const float kpy = 2.0;
+static const float TRACTION_LIMIT = 5.0;  // maximum v*w product (m/s^2)
+static const float kpy = 1.0;
 static const float kvy = 2.0;
 
 static const float LANE_OFFSET = 0.0;
@@ -193,20 +193,30 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
 
   // it's a little backwards though because our steering is reversed w.r.t. curvature
   float k_target = dx * (-(y_e - lane_offset) * dx * kpy*cpsi - spsi*(-kappa*spsi - kvy*cpsi) + kappa);
-  float v_target = fmin(vmax, sqrtf(TRACTION_LIMIT / fabs(k_target)));
-  float a_target = clip(v_target - v, BRAKE_LIMIT, ACCEL_LIMIT);
-
-  printf("steer_target %f delta %f v_target %f v %f a_target %f lateral_a %f/%f v %f y %f psi %f\n",
-      k_target, delta, v_target, v, a_target, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
 
   *steering_out = clip((k_target - srv_b) / srv_a, -1, 1);
+  if (*steering_out == -1 || *steering_out == 1) {
+    // steering is clamped, so we may need to further limit speed
+    float w_target = v * k_target;
+    float k_limit = srv_a * (*steering_out) + srv_b;
+    vmax = fmin(vmax, w_target / k_limit);
+  }
+
+  float v_target = fmin(vmax, sqrtf(TRACTION_LIMIT / fabs(k_target)));
+  float a_target = clip(v_target - v, BRAKE_LIMIT, ACCEL_LIMIT) / dt;
+  if (a_target > 0) {  // accelerate more gently than braking
+    a_target /= 4;
+  }
   *throttle_out = clip(
-       MotorControl(a_target / (4*dt), k1, k2, k3, k4, v),
+       MotorControl(a_target, k1, k2, k3, k4, v),
        -1, MAX_THROTTLE);
   // static float ai_last = 0;
   // *throttle_out = clip(ACCEL_P * a_target + ACCEL_I * ai_last,
   //     -1, MAX_THROTTLE);
   // ai_last = clip(ai_last + a_target, -500, 500);
+
+  printf("steer_target %f delta %f v_target %f v %f a_target %f lateral_a %f/%f v %f y %f psi %f\n",
+      k_target, delta, v_target, v, a_target, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
 
   printf("  throttle %f steer %f\n", *throttle_out, *steering_out);
   return true;
