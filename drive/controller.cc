@@ -17,10 +17,6 @@ using Eigen::VectorXf;
 static const float MAX_THROTTLE = 0.8;
 static const float SPEED_LIMIT = 5.0;
 
-static const float ACCEL_P = -0.1;
-static const float ACCEL_I = 0.01;
-static const float ACCEL_D = 0.0;
-
 static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
 static const float TRACTION_LIMIT = 4.0;  // maximum v*w product (m/s^2)
@@ -157,7 +153,6 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
   float y_e = x_[2];
   float psi_e = x_[3];
   float kappa = x_[4];
-#if 1
   float ml_1 = x_[5];
   float ml_2 = x_[6];
   float ml_3 = x_[7];
@@ -167,15 +162,6 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
   float srv_r = x_[11];
 
   float k1 = exp(ml_1), k2 = exp(ml_2), k3 = exp(ml_3), k4 = exp(ml_4);
-#else
-  float srv_a = x_[5];
-  float srv_b = x_[6];
-  float srv_r = x_[7];
-  float k1 = 5000 * M_PI * 0.101 / 40.0;
-  float k2 = 4, k3 = 1;
-  float k4 = 0.3 * k1;
-#endif
-
 
   float vmax = fmin(SPEED_LIMIT, (k1 - k4)/(k2 + k3));
 
@@ -210,10 +196,6 @@ bool DriveController::GetControl(float *throttle_out, float *steering_out,
   *throttle_out = clip(
        MotorControl(a_target, k1, k2, k3, k4, v),
        -1, MAX_THROTTLE);
-  // static float ai_last = 0;
-  // *throttle_out = clip(ACCEL_P * a_target + ACCEL_I * ai_last,
-  //     -1, MAX_THROTTLE);
-  // ai_last = clip(ai_last + a_target, -500, 500);
 
   printf("steer_target %f delta %f v_target %f v %f a_target %f lateral_a %f/%f v %f y %f psi %f\n",
       k_target, delta, v_target, v, a_target, v*v*delta, TRACTION_LIMIT, v, y_e, psi_e);
