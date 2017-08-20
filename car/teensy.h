@@ -13,7 +13,8 @@ class Teensy {
   bool Init();
 
   bool SetControls(uint8_t led, int8_t esc, int8_t servo);
-  bool GetFeedback(uint8_t *servo, uint16_t *encoders);
+  bool GetFeedback(uint8_t *servo, uint16_t *encoder_pos,
+      uint16_t *encoder_dt);
 
  private:
   const I2C &i2c_;

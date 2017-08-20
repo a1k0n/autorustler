@@ -40,9 +40,10 @@ int main() {
   for (i = 0; i < 400; i++) {
     uint8_t servo;
     uint16_t encoders[4];
+    uint16_t encoderpw[4];
     teensy.SetControls(i & 32 ? 1 : 0, 0, 60*sin(i* 0.01));
-    teensy.GetFeedback(&servo, encoders);
-    printf("servo %d encoders %d %d %d %d\r",
+    teensy.GetFeedback(&servo, encoders, encoderpw);
+    printf("servo %d encoders %05d %05d %05d %05d\r",
         servo, encoders[0], encoders[1], encoders[2], encoders[3]);
     fflush(stdout);
     usleep(10000);

@@ -37,7 +37,7 @@ module IMUMount() {
 }
 
 module BasePlate() {
-  thick = 2;
+  thick = 4;
   difference() {
     union() {
       linear_extrude(thick) minkowski() {
@@ -54,7 +54,7 @@ module BasePlate() {
       }
       for (h = BasePlateMountingScrews) {
         translate([h[0], h[1], thick-0.1])
-          cylinder(d=5, h=5);
+          cylinder(d=6, h=6);
       }
     }
 
@@ -83,7 +83,7 @@ module BasePlate() {
 }
 
 module ElectronicsPlate() {
-  thick = 2;
+  thick = 3;
   totalsize = [120, 90, thick];
   mounting_offset = [130, totalsize[1] / 2, 0];
   difference() {
@@ -129,8 +129,10 @@ module ElectronicsPlate() {
         }
         translate([0, 61, 0])
           for (h = PWMBoardScrews) {
-            // M2 screws
-            translate([h[0], h[1], -0.1]) cylinder(d=1.6 + $overbore, h=thick + 6);
+            // PCA9685 uses M2 screws
+            // translate([h[0], h[1], -0.1]) cylinder(d=1.6 + $overbore, h=thick + 6);
+            // but my replacement board is M2.5 / #4-40 screws
+            translate([h[0], h[1], -0.1]) cylinder(d=2.2606 + $overbore, h=thick + 6);
           }
         translate([68, 61, 0])
           for (h = IMUBoardScrews) {
@@ -148,5 +150,5 @@ module ElectronicsPlate() {
 };
 
 translate([0,0,-0.01]) %servoholder();
-BasePlate();
-translate([0, 0, 7]) ElectronicsPlate();
+%BasePlate();
+translate([0, 0, 4+6]) ElectronicsPlate();
