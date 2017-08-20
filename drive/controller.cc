@@ -23,7 +23,7 @@ static const float ACCEL_D = 0.0;
 
 static const float ACCEL_LIMIT = 4.0;  // maximum dv/dt (m/s^2)
 static const float BRAKE_LIMIT = -100.0;  // minimum dv/dt
-static const float TRACTION_LIMIT = 5.0;  // maximum v*w product (m/s^2)
+static const float TRACTION_LIMIT = 4.0;  // maximum v*w product (m/s^2)
 static const float kpy = 1.0;
 static const float kvy = 2.0;
 
