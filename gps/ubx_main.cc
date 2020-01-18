@@ -26,6 +26,7 @@ void compute_refplane() {
   ref_east = cross(ref_north, ref_up);
 }
 
+/*
 void OnECEF(const nav_posecef* navmsg) {
   fprintf(stderr, "POS-ECEF @%10d xyz (%d, %d, %d) +- %d\n", navmsg->iTOW,
           navmsg->ecefX, navmsg->ecefY, navmsg->ecefZ, navmsg->pAcc);
@@ -48,12 +49,28 @@ void OnECEF(const nav_posecef* navmsg) {
     fflush(stdout);
   }
 }
+*/
+
+void OnPVT(const nav_pvt &msg) {
+  printf("%04d-%02d-%02dT%02d:%02d:%02d.%09d ", msg.year, msg.month, msg.day,
+      msg.hour, msg.min, msg.sec, msg.nano);
+  printf("fix:%d numSV:%d %d.%07d +-%dmm %d.%07d +-%dmm height %dmm "
+      "vel %d %d %d +-%d mm/s "
+      "heading motion %d.%05d vehicle %d +- %d.%05d\n",
+      msg.fixType, msg.numSV,
+      msg.lon/10000000, abs(msg.lon)%10000000, msg.hAcc,
+      msg.lat/10000000, abs(msg.lat)%10000000, msg.vAcc,
+      msg.height,
+      msg.velN, msg.velE, msg.velD, msg.sAcc,
+      msg.headMot/100000, abs(msg.headMot)%100000,
+      msg.headVeh, msg.headAcc/100000, msg.headAcc%100000);
+}
 
 int main(int argc, char** argv) {
   int ubxfd = ubx_open();
   if (ubxfd == -1) return 1;
 
-  ubx_read_loop(ubxfd, OnECEF);
+  ubx_read_loop(ubxfd, OnPVT);
 
   return 0;
 }

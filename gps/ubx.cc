@@ -11,7 +11,7 @@
 
 #include "./ubx.h"
 
-const char ubx_port[] = "/dev/ttyAMA0";
+const char ubx_port[] = "/dev/serial0";
 #define startup_ioctl_baud B9600
 #define runtime_baudrate 115200
 #define runtime_ioctl_baud B115200
@@ -65,7 +65,7 @@ void ubx_sendmsg(int fd, int msg_class, int msg_id,
   }
 }
 
-void ubx_enable_periodic(int fd, int msgclass, int msgid, int enable) {
+void ubx_enable_periodic(int fd, uint8_t msgclass, uint8_t msgid, uint8_t enable) {
   fprintf(stderr, "%sabling (%d,%d)\n", enable ? "en" : "dis",
           msgclass, msgid);
   // now, CFG-MSG and set NAV-SOL output on every epoch
@@ -78,16 +78,22 @@ void ubx_enable_periodic(int fd, int msgclass, int msgid, int enable) {
 
 void process_msg(int fd, int msg_class, int msg_id,
                  uint8_t *msgbuf, int msg_length,
-                 void (*on_ecef)(const nav_posecef*)) {
+                 void (*on_pvt)(const nav_pvt&)) {
   int i;
   switch ((msg_class << 8) + msg_id) {
     case 0x0101:  // NAV-POSECEF
       {
         struct nav_posecef *navmsg = (struct nav_posecef*) msgbuf;
-        on_ecef(navmsg);
+        // on_ecef(navmsg);
       }
       break;
     case 0x0102:  // NAV-POSLLH (ignored)
+      break;
+    case 0x0107:  // NAV-PVT
+      {
+        const struct nav_pvt *navmsg = (struct nav_pvt*) msgbuf;
+        on_pvt(*navmsg);
+      }
       break;
     case 0x0501:  // ACK
     case 0x0500:  // NAK
@@ -147,15 +153,20 @@ int ubx_open() {
     return -1;
   }
 
-  ubx_sendmsg(fd, 6, 6, NULL, 0);
+  // ubx_sendmsg(fd, 6, 6, NULL, 0);
+
+  // ubx-cfg-rate
+  uint8_t msgbuf[6] = {100, 0, 1, 0, 0, 0};  // 100ms measurements, one solution per measurement, UTC timeref
+  ubx_sendmsg(fd, 6, 8, msgbuf, 6);
 
   // ubx_enable_periodic(fd, 1, 2, 1);  // enable NAV-POSLLH
-  ubx_enable_periodic(fd, 1, 1, 1);  // enable NAV-POSECEV
+  // ubx_enable_periodic(fd, 1, 1, 1);  // enable NAV-POSECEF
+  ubx_enable_periodic(fd, 1, 7, 1);  // enable UBX-NAV-PVT
 
   return fd;
 }
 
-void ubx_read_loop(int fd, void (*on_ecef)(const nav_posecef*)) {
+void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt&)) {
   uint8_t buf[512];
   static uint8_t msgbuf[512];
   static int read_state = 0;
@@ -229,7 +240,7 @@ void ubx_read_loop(int fd, void (*on_ecef)(const nav_posecef*)) {
                     msg_cls, msg_id, buf[i], msg_cka);
           } else {
             process_msg(fd, msg_cls, msg_id, msgbuf, msg_length,
-                        on_ecef);
+                        on_pvt);
           }
           read_state = 0;
           break;
