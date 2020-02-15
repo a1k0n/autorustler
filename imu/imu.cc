@@ -1,8 +1,9 @@
 #include <byteswap.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <vector>
 #include <Eigen/Dense>
+#include <vector>
+
 #include "imu/imu.h"
 
 using Eigen::Matrix4f;
@@ -10,18 +11,18 @@ using Eigen::Vector3f;
 using Eigen::Vector4f;
 
 namespace {
-const uint8_t ADDR_ITG3200  = 0x68;
+const uint8_t ADDR_ITG3200 = 0x68;
 const uint8_t ADDR_HMC5883L = 0x1e;
-const uint8_t ADDR_ADXL345  = 0x53;
+const uint8_t ADDR_ADXL345 = 0x53;
 
 const Vector3f gyrocal_b(-182.11, -179.32, -212.83);
 const Vector3f gyrocal_m(-0.01169, -0.01123, -0.01164);
 const float pointcloud_dist = 200.0f;
 
-bool CheckPointCloud(const Vector3f& pt, std::vector<Vector3f> *pointcloud) {
+bool CheckPointCloud(const Vector3f &pt, std::vector<Vector3f> *pointcloud) {
   for (int i = 0; i < pointcloud->size(); i++) {
     if (((*pointcloud)[i] - pt).squaredNorm() <
-        pointcloud_dist*pointcloud_dist) {
+        pointcloud_dist * pointcloud_dist) {
       return false;
     }
   }
@@ -29,7 +30,7 @@ bool CheckPointCloud(const Vector3f& pt, std::vector<Vector3f> *pointcloud) {
   return true;
 }
 
-}  // empty namespace
+}  // namespace
 
 // our motion model should figure out whether the car is on the ground (1g down
 // on the accelerometer) or flying off a ramp (0g); if it's on the ground and
@@ -42,8 +43,8 @@ bool IMU::Init() {
   mag_bias_ = Vector3f::Zero();
 
   // config gyro
-  i2c_.Write(ADDR_ITG3200, 0x3E, 0x01);  // use X gyro PLL oscillator
-  i2c_.Write(ADDR_ITG3200, 0x15, 19);    // samplerate 50Hz (1000/(19+1))
+  i2c_.Write(ADDR_ITG3200, 0x3E, 0x01);      // use X gyro PLL oscillator
+  i2c_.Write(ADDR_ITG3200, 0x15, 19);        // samplerate 50Hz (1000/(19+1))
   i2c_.Write(ADDR_ITG3200, 0x16, 0x18 + 4);  // enable, 20Hz bandwidth
   // config compass
   i2c_.Write(ADDR_HMC5883L, 0x00, 0x38);  // CRA: 75Hz rate w/ 2 averages
@@ -60,33 +61,29 @@ bool IMU::Init() {
 
 bool IMU::ReadRaw(IMURawState *s) {
   uint8_t axis_buf[8];
-  if (!i2c_.Read(ADDR_ITG3200, 0x1b, axis_buf, 8))
-    return false;
+  if (!i2c_.Read(ADDR_ITG3200, 0x1b, axis_buf, 8)) return false;
   // temperature is 280 LSB/deg C, -13200 LSB @35 C
-  s->gyro_temp = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));
-  s->gyro_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // roll
-  s->gyro_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // pitch
-  s->gyro_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+6));  // yaw
+  s->gyro_temp = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 0));
+  s->gyro_x = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 2));  // roll
+  s->gyro_y = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 4));  // pitch
+  s->gyro_z = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 6));  // yaw
 
-  if (!i2c_.Read(ADDR_HMC5883L, 0x03, axis_buf, 6))
-    return false;
-  s->mag_x = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+0));  // front?
-  s->mag_z = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+2));  // up
-  s->mag_y = bswap_16(*reinterpret_cast<uint16_t*>(axis_buf+4));  // side?
+  if (!i2c_.Read(ADDR_HMC5883L, 0x03, axis_buf, 6)) return false;
+  s->mag_x = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 0));  // front?
+  s->mag_z = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 2));  // up
+  s->mag_y = bswap_16(*reinterpret_cast<uint16_t *>(axis_buf + 4));  // side?
 
-  if (!i2c_.Read(ADDR_ADXL345, 0x32, axis_buf, 6))
-    return false;
-  s->accel_x = (*reinterpret_cast<uint16_t*>(axis_buf+0));  // toward back
-  s->accel_y = (*reinterpret_cast<uint16_t*>(axis_buf+2));  // toward right
-  s->accel_z = (*reinterpret_cast<uint16_t*>(axis_buf+4));  // toward ground
+  if (!i2c_.Read(ADDR_ADXL345, 0x32, axis_buf, 6)) return false;
+  s->accel_x = (*reinterpret_cast<uint16_t *>(axis_buf + 0));  // toward back
+  s->accel_y = (*reinterpret_cast<uint16_t *>(axis_buf + 2));  // toward right
+  s->accel_z = (*reinterpret_cast<uint16_t *>(axis_buf + 4));  // toward ground
 
   return true;
 }
 
 bool IMU::ReadCalibrated(IMUState *s) {
   IMURawState rawstate;
-  if (!ReadRaw(&rawstate))
-    return false;
+  if (!ReadRaw(&rawstate)) return false;
 
   Calibrate(rawstate, s);
   return true;

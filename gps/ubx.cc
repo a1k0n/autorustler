@@ -1,5 +1,5 @@
-#include <math.h>
 #include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -9,7 +9,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "./ubx.h"
+#include "gps/ubx.h"
 
 const char ubx_port[] = "/dev/serial0";
 #define startup_ioctl_baud B9600
@@ -28,11 +28,9 @@ void nmea_sendmsg(int fd, const char *msg) {
   write(fd, footer, 5);
 }
 
-void ubx_sendmsg(int fd, int msg_class, int msg_id,
-                 uint8_t *msg, int msg_len) {
+void ubx_sendmsg(int fd, int msg_class, int msg_id, uint8_t *msg, int msg_len) {
   static uint8_t header[6] = {0xb5, 0x62}, footer[2];
-  static struct iovec iov[3] = {
-    {header, 6}, {0, 0}, {footer, 2}};
+  static struct iovec iov[3] = {{header, 6}, {0, 0}, {footer, 2}};
   uint8_t cka, ckb;
   int i;
   iov[1].iov_base = msg;
@@ -40,13 +38,17 @@ void ubx_sendmsg(int fd, int msg_class, int msg_id,
   header[2] = msg_class;
   cka = ckb = msg_class;
   header[3] = msg_id;
-  cka += msg_id; ckb += cka;
+  cka += msg_id;
+  ckb += cka;
   header[4] = msg_len & 0xff;
-  cka += header[4]; ckb += cka;
+  cka += header[4];
+  ckb += cka;
   header[5] = msg_len >> 8;
-  cka += header[5]; ckb += cka;
+  cka += header[5];
+  ckb += cka;
   for (i = 0; i < msg_len; i++) {
-    cka += msg[i]; ckb += cka;
+    cka += msg[i];
+    ckb += cka;
   }
   footer[0] = cka;
   footer[1] = ckb;
@@ -76,34 +78,31 @@ void ubx_enable_periodic(int fd, uint8_t msgclass, uint8_t msgid, uint8_t enable
   ubx_sendmsg(fd, 6, 1, cfg_msg, 8);
 }
 
-void process_msg(int fd, int msg_class, int msg_id,
-                 uint8_t *msgbuf, int msg_length,
-                 void (*on_pvt)(const nav_pvt&)) {
+void process_msg(int fd, int msg_class, int msg_id, uint8_t *msgbuf,
+                 int msg_length, void (*on_pvt)(const nav_pvt &)) {
   int i;
   switch ((msg_class << 8) + msg_id) {
     case 0x0101:  // NAV-POSECEF
-      {
-        struct nav_posecef *navmsg = (struct nav_posecef*) msgbuf;
-        // on_ecef(navmsg);
-      }
-      break;
+    {
+      struct nav_posecef *navmsg = (struct nav_posecef *)msgbuf;
+      // on_ecef(navmsg);
+    } break;
     case 0x0102:  // NAV-POSLLH (ignored)
       break;
     case 0x0107:  // NAV-PVT
-      {
-        const struct nav_pvt *navmsg = (struct nav_pvt*) msgbuf;
-        on_pvt(*navmsg);
-      }
+    {
+      const struct nav_pvt *navmsg = (struct nav_pvt *)msgbuf;
+      on_pvt(*navmsg);
       break;
+    }
     case 0x0501:  // ACK
     case 0x0500:  // NAK
-      fprintf(stderr, "%s (%d,%d)\n", msg_id == 1 ? "ack" : "nak",
-              msgbuf[0], msgbuf[1]);
+      fprintf(stderr, "%s (%d,%d)\n", msg_id == 1 ? "ack" : "nak", msgbuf[0],
+              msgbuf[1]);
       break;
     default:
       fprintf(stderr, "read msg (%02x,%02x): ", msg_class, msg_id);
-      for (i = 0; i < msg_length; i++)
-        fprintf(stderr, "%02x ", msgbuf[i]);
+      for (i = 0; i < msg_length; i++) fprintf(stderr, "%02x ", msgbuf[i]);
       fprintf(stderr, "\n");
       // diable unknown messages?
       // ubx_enable_periodic(fd, msg_class, msg_id, 0);
@@ -166,7 +165,7 @@ int ubx_open() {
   return fd;
 }
 
-void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt&)) {
+void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt &)) {
   uint8_t buf[512];
   static uint8_t msgbuf[512];
   static int read_state = 0;
@@ -191,28 +190,37 @@ void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt&)) {
           if (buf[i] == 0xb5) {
             read_state++;
           } else {
-            putchar(buf[i]); fflush(stdout);
+            putchar(buf[i]);
+            fflush(stdout);
           }
           break;
         case 1:
-          if (buf[i] == 0x62) read_state++;
-          else if (buf[i] != 0xb5) read_state = 0;
-          msg_cka = 0; msg_ckb = 0;
+          if (buf[i] == 0x62)
+            read_state++;
+          else if (buf[i] != 0xb5)
+            read_state = 0;
+          msg_cka = 0;
+          msg_ckb = 0;
           break;
         case 2:
-          msg_cls = buf[i]; read_state++;
+          msg_cls = buf[i];
+          read_state++;
           break;
         case 3:
-          msg_id = buf[i]; read_state++;
+          msg_id = buf[i];
+          read_state++;
           break;
         case 4:
-          msg_length = buf[i]; read_state++;
+          msg_length = buf[i];
+          read_state++;
           break;
         case 5:
-          msg_length += buf[i] << 8; read_state++;
+          msg_length += buf[i] << 8;
+          read_state++;
           msg_ptr = 0;
           if (msg_length > sizeof(msgbuf)) {
-            fprintf(stderr, "discarding (%02x,%02x) message of length %d "
+            fprintf(stderr,
+                    "discarding (%02x,%02x) message of length %d "
                     "(buffer is %d)\n",
                     msg_cls, msg_id, msg_length, sizeof(msgbuf));
             read_state = 0;
@@ -225,7 +233,8 @@ void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt&)) {
           break;
         case 7:
           if (msg_cka != buf[i]) {
-            fprintf(stderr, "discarding (%02x,%02x) message; "
+            fprintf(stderr,
+                    "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
             read_state = 0;
@@ -235,12 +244,12 @@ void ubx_read_loop(int fd, void (*on_pvt)(const nav_pvt&)) {
           break;
         case 8:
           if (msg_ckb != buf[i]) {
-            fprintf(stderr, "discarding (%02x,%02x) message; "
+            fprintf(stderr,
+                    "discarding (%02x,%02x) message; "
                     "cka mismatch (got %02x calc'd %02x)\n",
                     msg_cls, msg_id, buf[i], msg_cka);
           } else {
-            process_msg(fd, msg_cls, msg_id, msgbuf, msg_length,
-                        on_pvt);
+            process_msg(fd, msg_cls, msg_id, msgbuf, msg_length, on_pvt);
           }
           read_state = 0;
           break;
